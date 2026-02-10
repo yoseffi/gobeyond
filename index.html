@@ -1,0 +1,3525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>GoBeyond</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&family=Outfit:wght@400;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --card: #1a1a2e;
+      --accent: #e94560;
+      --gold: #ffd93d;
+      --correct: #6bcb77;
+      --text: #eaeaea;
+      --muted: #8892a0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Camera / XR fullscreen */
+    #camera-video {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    #xr-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* Overlay: all UI on top of camera (z-index and isolation so numbers stay above video) */
+    #ar-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: linear-gradient(180deg, rgba(15,15,26,0.7) 0%, transparent 20%, transparent 80%, rgba(15,15,26,0.6) 100%);
+      pointer-events: none;
+    }
+    /* Ensure answers container is above overlay gradient */
+    #answers-container {
+      z-index: 100 !important;
+    }
+
+    #ar-overlay > * { pointer-events: auto; }
+
+    /* Start screen (no camera yet) */
+    #start-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: var(--bg);
+      background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(233, 69, 96, 0.15), transparent);
+    }
+
+    #start-screen.hidden { display: none; }
+
+    .start-title {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(1.75rem, 6vw, 2.5rem);
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--gold), #ff9f43);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .start-sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 2rem; text-align: center; }
+
+    .start-btns { display: flex; flex-direction: column; gap: 1rem; width: 100%; max-width: 280px; }
+
+    .btn {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 600;
+      padding: 1rem 1.5rem;
+      border: none;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #c73e54);
+      color: white;
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+      border: 2px solid rgba(255,255,255,0.15);
+    }
+
+    .btn-album {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 30;
+      padding: 0.6rem 1rem;
+      font-size: 0.95rem;
+      background: rgba(26,26,46,0.9);
+      color: var(--gold);
+      border: 2px solid rgba(255,217,61,0.4);
+      border-radius: 12px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-album { display: none; }
+    .btn-album.visible { display: flex; }
+
+    .btn-back-menu {
+      position: fixed;
+      bottom: 1rem;
+      right: 4rem;
+      z-index: 30;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.8rem;
+      background: rgba(26,26,46,0.9);
+      color: var(--muted);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      cursor: pointer;
+      display: none;
+    }
+    .btn-back-menu.visible { display: block; }
+    .btn-question-type {
+      position: fixed;
+      top: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      padding: 0.4rem 0.9rem;
+      font-size: 0.85rem;
+      background: rgba(26,26,46,0.9);
+      color: var(--muted);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      cursor: pointer;
+      display: none;
+    }
+    .btn-question-type.visible { display: block; }
+    #sound-toggle { position: fixed; bottom: 1rem; right: 1rem; z-index: 30; }
+    #catch-mode-toggle { position: fixed; bottom: 1rem; left: 1rem; z-index: 30; }
+    #profile-badge {
+      position: fixed;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      font-size: 0.8rem;
+      color: var(--muted);
+      max-width: 16rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: none;
+      text-align: center;
+    }
+    #profile-badge.visible { display: block; }
+    #profile-badge strong { color: var(--text); }
+
+    /* Screens inside overlay (stack above camera stream) */
+    .screen {
+      position: relative;
+      z-index: 2;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      max-width: min(50vw, 420px);
+      width: 100%;
+      margin: 0 auto;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .screen.active { display: flex; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(255, 217, 61, 0.3); }
+      50% { box-shadow: 0 0 40px rgba(255, 217, 61, 0.5); }
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translate(-50%, -50%) translateX(0); }
+      25% { transform: translate(-50%, -50%) translateX(-6px); }
+      75% { transform: translate(-50%, -50%) translateX(6px); }
+    }
+
+    h1 {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(1.75rem, 7vw, 2.75rem);
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--gold), #ff9f43);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    #quiz-title {
+      font-size: clamp(1.5rem, 5vw, 2.75rem);
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+      text-align: center;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .spelling-underlines {
+      display: none;
+      justify-content: center;
+      gap: 0.15em;
+      margin-top: 0.35rem;
+      font-size: 1.5rem;
+      letter-spacing: 0.08em;
+      min-height: 1.5em;
+    }
+    .spelling-underlines.visible { display: flex; }
+    .spelling-underlines span { min-width: 1ch; text-align: center; color: var(--gold); border-bottom: 2px solid rgba(255,217,61,0.6); }
+    .spelling-underlines .underscore { color: var(--muted); border-bottom-color: rgba(255,255,255,0.3); }
+
+    .spelling-picture-frame {
+      display: none;
+      justify-content: center;
+      align-items: center;
+      margin: 0 auto 0.5rem;
+      width: 96px;
+      height: 96px;
+      border-radius: 16px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+      border: 3px solid rgba(255,217,61,0.5);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+    .spelling-picture-frame.visible { display: flex; }
+    .spelling-picture-frame img {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+    }
+
+    /* Exploration collect mode (math): find all answers before choosing */
+    .found-answers-area {
+      display: none;
+      width: 100%;
+      max-width: 520px;
+      margin: 0.5rem auto 0.75rem;
+      position: relative;
+      z-index: 22;
+      pointer-events: auto;
+    }
+    .found-answers-area.visible { display: block; }
+    .found-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .found-counter {
+      font-weight: 800;
+      color: rgba(255,255,255,0.95);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      font-size: 1.05rem;
+    }
+    .found-square {
+      width: 88px;
+      height: 88px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.22);
+      border: 2px solid rgba(255,255,255,0.45);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .found-square.hidden { display: none; }
+    .found-square .found-square-content {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translateZ(0);
+      font-size: 2.6rem;
+      font-weight: 900;
+      color: #ffffff;
+    }
+    .found-square-progress {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 6px;
+      background: rgba(255,255,255,0.12);
+    }
+    .found-square-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--gold), #ff9f43);
+      transition: width 0.05s linear;
+    }
+    .found-collected-row {
+      margin-top: 0.65rem;
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .found-choice-btn {
+      width: 88px;
+      height: 72px;
+      border-radius: 14px;
+      background: rgba(26, 26, 46, 0.72);
+      border: 2px solid rgba(255,255,255,0.18);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: #ffffff;
+    }
+    .found-choice-btn:active { transform: scale(0.98); }
+    .found-choice-btn.wrong {
+      border-color: rgba(233, 69, 96, 0.85);
+      box-shadow: 0 4px 18px rgba(233, 69, 96, 0.25), 0 4px 18px rgba(0,0,0,0.35);
+    }
+
+    /* Make scattered answers slightly larger while searching */
+    #quiz-screen.collect-find-mode .answers-exploration-space .answer-btn {
+      transform: translate(-50%, -50%) scale(calc(var(--proximity-scale, 1) * 1.12));
+    }
+    #quiz-screen.collect-find-mode .answer-digit-gif {
+      height: 1.35em;
+      width: 1.35em;
+    }
+
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 0.75rem; }
+    #quiz-subtitle {
+      font-size: clamp(1.1rem, 4vw, 1.5rem);
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.95);
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      margin-bottom: 1rem;
+    }
+
+    .answers {
+      position: fixed;
+      left: 24%;
+      right: 24%;
+      top: 0;
+      bottom: 0;
+      pointer-events: none;
+      z-index: 100;
+      overflow: visible;
+      isolation: isolate;
+    }
+
+    /* Room: tilt or drag to find numbers; ~25% visible so 1–2 are in view, rest to find */
+    .answers-exploration-space {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 500%;
+      height: 500%;
+      pointer-events: none;
+      will-change: transform;
+      z-index: 1;
+    }
+
+    .answers-exploration-space .answer-btn {
+      pointer-events: auto;
+      transform: translate(-50%, -50%) scale(var(--proximity-scale, 1));
+      transform-origin: center;
+      animation: none;
+    }
+
+    .answers-exploration-space .answer-btn .answer-btn-inner {
+      animation: none;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .answer-digits {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .answer-digit-gif {
+      display: block;
+      height: 1.2em;
+      width: 1.2em;
+      object-fit: contain;
+      object-position: center;
+      backface-visibility: hidden;
+    }
+    .answer-digit-gif:not(:first-child) {
+      margin-left: -0.6em;
+    }
+    .answers-exploration-space .answer-btn:hover,
+    .answers-exploration-space .answer-btn.finger-hover {
+      transform: translate(-50%, -50%) scale(calc(var(--proximity-scale, 1) * 1.15));
+    }
+
+    @keyframes answerFloat {
+      0% { transform: translate(-50%, -50%) translate(70px, 0) scale(1) rotate(0deg); }
+      6.25% { transform: translate(-50%, -50%) translate(65px, 28px) scale(1.06) rotate(5deg); }
+      12.5% { transform: translate(-50%, -50%) translate(49px, 49px) scale(1.1) rotate(0deg); }
+      18.75% { transform: translate(-50%, -50%) translate(28px, 65px) scale(1.06) rotate(-5deg); }
+      25% { transform: translate(-50%, -50%) translate(0, 70px) scale(1) rotate(0deg); }
+      31.25% { transform: translate(-50%, -50%) translate(-28px, 65px) scale(1.06) rotate(5deg); }
+      37.5% { transform: translate(-50%, -50%) translate(-49px, 49px) scale(1.1) rotate(0deg); }
+      43.75% { transform: translate(-50%, -50%) translate(-65px, 28px) scale(1.06) rotate(-5deg); }
+      50% { transform: translate(-50%, -50%) translate(-70px, 0) scale(1) rotate(0deg); }
+      56.25% { transform: translate(-50%, -50%) translate(-65px, -28px) scale(1.06) rotate(5deg); }
+      62.5% { transform: translate(-50%, -50%) translate(-49px, -49px) scale(1.1) rotate(0deg); }
+      68.75% { transform: translate(-50%, -50%) translate(-28px, -65px) scale(1.06) rotate(-5deg); }
+      75% { transform: translate(-50%, -50%) translate(0, -70px) scale(1) rotate(0deg); }
+      81.25% { transform: translate(-50%, -50%) translate(28px, -65px) scale(1.06) rotate(5deg); }
+      87.5% { transform: translate(-50%, -50%) translate(49px, -49px) scale(1.1) rotate(0deg); }
+      93.75% { transform: translate(-50%, -50%) translate(65px, -28px) scale(1.06) rotate(-5deg); }
+      100% { transform: translate(-50%, -50%) translate(70px, 0) scale(1) rotate(0deg); }
+    }
+
+    .answer-btn {
+      position: absolute;
+      font-family: 'Outfit', sans-serif;
+      font-size: clamp(3rem, 8vw, 6rem);
+      font-weight: 900;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      color: #ffffff;
+      cursor: pointer;
+      transition: transform 0.2s ease, color 0.2s ease, text-shadow 0.2s ease;
+      pointer-events: auto;
+      z-index: 101;
+      text-shadow: 
+        0 0 10px rgba(255, 255, 255, 0.8),
+        0 0 20px rgba(255, 255, 255, 0.6),
+        0 0 30px rgba(255, 255, 255, 0.4),
+        2px 2px 4px rgba(0, 0, 0, 0.9),
+        -2px -2px 4px rgba(0, 0, 0, 0.9);
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: answerFloat 10s ease-in-out infinite;
+    }
+
+    .answer-btn:hover,
+    .answer-btn.finger-hover {
+      animation-play-state: paused;
+    }
+
+    .answer-btn:hover {
+      color: var(--gold);
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+    .answers-exploration-space .answer-btn:hover {
+      transform: translate(-50%, -50%) scale(calc(var(--proximity-scale, 1) * 1.15));
+    }
+
+    .answer-btn.wrong {
+      animation: shake 0.4s ease;
+      color: var(--accent);
+      text-shadow: 
+        0 0 15px rgba(233, 69, 96, 0.9),
+        0 0 30px rgba(233, 69, 96, 0.7),
+        0 0 45px rgba(233, 69, 96, 0.5),
+        2px 2px 4px rgba(0, 0, 0, 0.9),
+        -2px -2px 4px rgba(0, 0, 0, 0.9);
+    }
+
+    .answer-btn.finger-hover {
+      color: var(--gold);
+      transform: translate(-50%, -50%) scale(1.15);
+    }
+    .answers-exploration-space .answer-btn.finger-hover {
+      transform: translate(-50%, -50%) scale(calc(var(--proximity-scale, 1) * 1.15));
+      text-shadow: 
+        0 0 20px rgba(255, 217, 61, 1),
+        0 0 40px rgba(255, 217, 61, 0.8),
+        0 0 60px rgba(255, 217, 61, 0.6),
+        2px 2px 4px rgba(0, 0, 0, 0.9),
+        -2px -2px 4px rgba(0, 0, 0, 0.9);
+    }
+    /* Spelling: keep letter buttons white only (no gold on hover) */
+    .answer-btn.answer-btn-letter,
+    .answer-btn.answer-btn-letter:hover,
+    .answer-btn.answer-btn-letter.finger-hover,
+    .answers-exploration-space .answer-btn.answer-btn-letter:hover,
+    .answers-exploration-space .answer-btn.answer-btn-letter.finger-hover {
+      color: #ffffff;
+      text-shadow: 
+        0 0 10px rgba(255, 255, 255, 0.8),
+        0 0 20px rgba(255, 255, 255, 0.6),
+        2px 2px 4px rgba(0, 0, 0, 0.9),
+        -2px -2px 4px rgba(0, 0, 0, 0.9);
+    }
+
+    .answer-btn .finger-progress-wrap {
+      position: absolute;
+      inset: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .answer-btn .finger-progress-fill {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: 4px;
+      background: var(--gold);
+      border-radius: 0 0 12px 12px;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    .answer-btn .finger-progress-label {
+      position: absolute;
+      bottom: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.6rem;
+      color: var(--gold);
+      white-space: nowrap;
+      text-shadow: 0 0 4px rgba(0,0,0,0.8);
+    }
+
+    /* Finger cursor (when hand tracking is active) */
+    #finger-cursor {
+      position: fixed;
+      width: 24px;
+      height: 24px;
+      margin: -12px 0 0 -12px;
+      border: 3px solid var(--gold);
+      border-radius: 50%;
+      background: rgba(255, 217, 61, 0.3);
+      pointer-events: none;
+      z-index: 5;
+      display: none;
+      transition: transform 0.05s ease-out;
+    }
+    #finger-cursor.visible { display: block; }
+
+    /* Dance screen: 3D canvas fullscreen, text on top */
+    #dance-screen {
+      position: relative;
+      max-width: none;
+      width: 100%;
+      height: 100%;
+      justify-content: flex-start;
+      padding-top: 2rem;
+    }
+    #dance-screen .dance-overlay {
+      position: relative;
+      z-index: 2;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+    #dance-screen #three-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      display: block;
+      pointer-events: none;
+    }
+    #character-on-head-wrap {
+      position: fixed;
+      z-index: 1;
+      width: 96px;
+      height: 120px;
+      pointer-events: none;
+      left: 50%;
+      top: 20%;
+      margin-left: -48px;
+      margin-top: -120px;
+      display: none;
+    }
+    #character-on-head-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .success-badge {
+      font-family: 'Fredoka', sans-serif;
+      font-size: 1.75rem;
+      color: var(--correct);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .collect-prompt { color: var(--muted); font-size: 0.95rem; margin-bottom: 1.25rem; }
+
+    .character-card {
+      background: linear-gradient(145deg, #252540 0%, #1a1a2e 100%);
+      border: 2px solid rgba(255, 217, 61, 0.4);
+      border-radius: 20px;
+      padding: 1.5rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      animation: glow 2s ease-in-out infinite;
+      backdrop-filter: blur(8px);
+    }
+
+    .character-card:hover { transform: scale(1.02); border-color: var(--gold); }
+    .character-card:active { transform: scale(0.98); }
+
+    .character-avatar {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 0.75rem;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2d2d44, #1f1f35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3.5rem;
+      border: 3px solid rgba(255, 217, 61, 0.3);
+    }
+
+    .character-name { font-family: 'Fredoka', sans-serif; font-size: 1.25rem; color: var(--gold); margin-bottom: 0.2rem; }
+    .character-desc { font-size: 0.85rem; color: var(--muted); }
+
+    /* Album panel */
+    #album-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      background: rgba(15, 15, 26, 0.97);
+      padding: 1rem;
+      overflow-y: auto;
+      display: none;
+    }
+
+    #album-panel.visible { display: block; }
+
+    .album-blurb-modal {
+      position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.7); padding: 1rem;
+    }
+    .album-blurb-modal.visible { display: flex; }
+    .album-blurb-content {
+      max-width: 360px; max-height: 80vh; overflow-y: auto;
+      background: var(--card); border-radius: 16px; padding: 1.25rem; border: 2px solid rgba(255,217,61,0.35);
+    }
+    .album-blurb-content h3 { color: var(--gold); font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .album-blurb-content p { font-size: 0.9rem; line-height: 1.5; color: var(--text); margin-bottom: 1rem; }
+
+    .album-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .album-title { font-family: 'Fredoka', sans-serif; font-size: 1.5rem; color: var(--gold); margin-right: auto; }
+    .album-reset {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+      border-radius: 8px;
+    }
+    .album-close {
+      padding: 0.5rem 1rem;
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .album-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      grid-template-rows: repeat(6, auto);
+      gap: 0.75rem;
+      max-width: 810px;
+      margin: 0 auto;
+      padding-bottom: 2rem;
+    }
+
+    .album-slot {
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 1rem;
+      min-height: 280px;
+    }
+
+    .album-slot.collected {
+      background: linear-gradient(145deg, #252540, #1a1a2e);
+      border: 2px solid rgba(255, 217, 61, 0.35);
+    }
+
+    .album-slot.empty {
+      background: rgba(26, 26, 46, 0.6);
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+    }
+
+    .album-slot .character-avatar { width: 96px; height: 96px; font-size: 3rem; margin-bottom: 0.5rem; border-radius: 50%; object-fit: cover; display: block; }
+    .album-slot .character-portrait-wrap { width: 96px; height: 96px; margin-bottom: 0.5rem; position: relative; display: flex; align-items: center; justify-content: center; border-radius: 50%; overflow: hidden; background: rgba(255,255,255,0.05); }
+    .album-slot .character-portrait-wrap .character-portrait { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .album-slot .character-portrait-wrap .portrait-fallback { position: absolute; width: 100%; height: 100%; margin: 0; display: none; font-size: 3rem; }
+    .album-slot .character-portrait { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; margin-bottom: 0.5rem; background: rgba(255,255,255,0.05); }
+    .album-slot .character-avatar.placeholder { font-size: 3rem; display: flex; align-items: center; justify-content: center; }
+    .album-slot .character-name { font-size: 0.95rem; }
+    .album-slot .character-blurb { font-size: 0.8rem; color: var(--muted); line-height: 1.3; margin-top: 0.4rem; max-height: 4em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; }
+    .album-slot .character-count { font-size: 0.8rem; color: var(--gold); margin-top: 0.3rem; font-weight: 600; }
+    .album-slot .album-info-btn { margin-top: 0.35rem; padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 8px; background: rgba(255,217,61,0.2); color: var(--gold); border: 1px solid rgba(255,217,61,0.4); cursor: pointer; }
+    .rarity-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 6px; margin-bottom: 0.35rem; display: inline-block; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+    .rarity-common { background: linear-gradient(135deg, #6b7280, #4b5563); color: #e5e7eb; border: 1px solid rgba(255,255,255,0.15); }
+    .rarity-rare { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #bfdbfe; border: 1px solid rgba(147,197,253,0.5); }
+    .rarity-epic { background: linear-gradient(135deg, #a855f7, #6d28d9); color: #e9d5ff; border: 1px solid rgba(216,180,254,0.5); }
+    .rarity-legendary { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fef3c7; border: 1px solid rgba(251,191,36,0.5); }
+    .rarity-mythic { background: linear-gradient(135deg, #ec4899, #be185d); color: #fce7f3; border: 1px solid rgba(251,113,133,0.5); box-shadow: 0 0 12px rgba(236,72,153,0.4); }
+    .album-slot.empty .character-avatar {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.1);
+      opacity: 0.5;
+    }
+
+    .album-slot.empty .character-name { color: var(--muted); font-size: 0.8rem; }
+    .slot-placeholder { font-size: 1.5rem; opacity: 0.4; margin-bottom: 0.25rem; }
+    .slot-label { font-size: 0.75rem; color: var(--muted); }
+
+    /* Added to album confirmation */
+    .album-added-msg {
+      font-size: 1rem;
+      color: var(--correct);
+      margin-bottom: 1rem;
+    }
+
+    .album-added-msg strong { color: var(--gold); }
+
+    .btn-next {
+      margin-top: 1rem;
+      background: linear-gradient(135deg, var(--correct), #4fa85a);
+      color: white;
+      width: 100%;
+      max-width: 280px;
+    }
+
+    /* All done */
+    #done-screen .success-badge { font-size: 1.5rem; }
+    #done-screen p { color: var(--muted); margin-bottom: 1rem; }
+
+    /* Identity screen (before start) */
+    #identity-screen { position: fixed; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem; background: var(--bg); background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(233, 69, 96, 0.12), transparent); }
+    #identity-screen.hidden { display: none; }
+    #identity-screen .start-title { margin-bottom: 1.5rem; }
+    #identity-screen input { width: 100%; max-width: 280px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; border-radius: 12px; border: 2px solid rgba(255,255,255,0.15); background: var(--card); color: var(--text); font-size: 1rem; }
+    #identity-screen .btn { width: 100%; max-width: 280px; margin-top: 0.5rem; }
+    #identity-screen .switch-profile { margin-top: 1rem; font-size: 0.9rem; color: var(--muted); cursor: pointer; text-decoration: underline; }
+    .lang-selector { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .lang-selector label { font-size: 0.95rem; color: var(--muted); }
+    .lang-selector select { padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 1rem; border-radius: 10px; border: 2px solid rgba(255,255,255,0.2); background: var(--card); color: var(--text); cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23888' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; }
+    .lang-selector select:hover { border-color: rgba(255,217,61,0.4); }
+    .lang-selector select:focus { outline: none; border-color: var(--gold); }
+    .teacher-dashboard-link { margin-top: 1.5rem; font-size: 0.9rem; }
+    .teacher-dashboard-link a { color: var(--muted); text-decoration: underline; }
+    .teacher-dashboard-link a:hover { color: var(--gold); }
+
+    /* Ball counter (same height as album: top 1rem) */
+    #ball-counter { position: fixed; top: 1rem; left: 1rem; z-index: 30; display: none; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem; background: rgba(26,26,46,0.95); border: 2px solid rgba(255,217,61,0.4); border-radius: 12px; color: var(--gold); font-weight: 700; font-size: 0.95rem; }
+    #ball-counter.visible { display: flex; }
+    #ball-counter .ball-ico { font-size: 1.2rem; }
+
+    /* Character bubble: sign held above head (protester-style placard) */
+    .character-bubble {
+      position: fixed; top: 8%; left: 50%; transform: translateX(-50%);
+      max-width: 280px; min-width: 180px; padding: 0.6rem 0.9rem; z-index: 2;
+      background: rgba(26,26,46,0.97); border: 3px solid rgba(255,217,61,0.5);
+      border-radius: 4px; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+    }
+    .character-bubble::after {
+      content: ''; position: absolute; top: 100%; left: 50%; margin-left: -3px;
+      width: 6px; height: 24px; background: linear-gradient(180deg, rgba(255,217,61,0.4), transparent);
+      border-radius: 0 0 3px 3px;
+    }
+    #character-bubble { display: none; }
+    #character-bubble.visible { display: block; }
+    .character-bubble strong { display: block; color: var(--gold); font-size: 1rem; margin-bottom: 0.25rem; text-align: center; }
+    .character-bubble .bubble-desc { margin: 0 0 0.35rem 0; font-size: 0.85rem; color: var(--muted); line-height: 1.3; text-align: center; }
+    .character-bubble .bubble-blurb { margin: 0; font-size: 0.8rem; color: rgba(255,255,255,0.7); line-height: 1.35; text-align: center; }
+    #capture-actions {
+      position: fixed; bottom: 2rem; left: 0; right: 0; z-index: 2;
+      display: none; flex-direction: column; align-items: center; gap: 0.5rem; pointer-events: auto;
+    }
+    #capture-actions.visible { display: flex; }
+    .ball-btn {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #ffd93d, #b8860b);
+      border: 3px solid rgba(255,255,255,0.5); font-size: 2.2rem;
+      cursor: pointer; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center; transition: transform 0.15s;
+    }
+    .ball-btn:active { transform: scale(0.95); }
+    .ball-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .ball-hint { font-size: 0.85rem; color: var(--muted); margin: 0; }
+    .btn-skip { margin-top: 0.5rem; }
+    .ball-fly-el {
+      position: fixed; left: 50%; bottom: 5rem; margin-left: -24px; z-index: 15;
+      width: 48px; height: 48px; font-size: 2rem;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; opacity: 0; transition: none;
+    }
+    .ball-fly-el.flying {
+      opacity: 1; transition: left 0.4s ease-out, bottom 0.4s ease-out, transform 0.4s ease-out;
+      left: 50%; bottom: 55%; margin-left: -24px; transform: scale(0.8);
+    }
+    .capture-feedback {
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      z-index: 20; font-family: 'Fredoka', sans-serif; font-size: 1.75rem; font-weight: 600;
+      padding: 0.75rem 1.5rem; border-radius: 12px; pointer-events: none;
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .capture-feedback.visible { opacity: 1; }
+    .capture-feedback.caught { color: var(--correct); background: rgba(107,203,119,0.2); }
+    .capture-feedback.missed { color: var(--accent); background: rgba(233,69,96,0.2); }
+
+    /* Teacher dashboard overlay */
+    #teacher-dashboard { position: fixed; inset: 0; z-index: 100; background: rgba(15,15,26,0.98); padding: 1rem; overflow-y: auto; display: none; }
+    #teacher-dashboard.visible { display: block; }
+    #teacher-dashboard h2 { font-size: 1.25rem; margin-bottom: 0.75rem; color: var(--gold); }
+    #teacher-dashboard .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; align-items: center; }
+    #teacher-dashboard .filters select, #teacher-dashboard .filters input { padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: var(--card); color: var(--text); font-size: 0.85rem; }
+    #teacher-dashboard .section { margin-bottom: 1.5rem; padding: 1rem; background: var(--card); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); }
+    #teacher-dashboard .bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 80px; margin-top: 0.5rem; }
+    #teacher-dashboard .bar { flex: 1; min-width: 20px; background: linear-gradient(180deg, var(--gold), var(--accent)); border-radius: 4px 4px 0 0; transition: height 0.2s; }
+    #teacher-dashboard .intervention-row { padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.9rem; }
+    #teacher-dashboard .intervention-row:last-child { border-bottom: none; }
+    #teacher-dashboard .assignment-row { margin-bottom: 0.5rem; font-size: 0.9rem; }
+    #teacher-dashboard .btn-demo { margin-right: 0.5rem; margin-top: 0.5rem; }
+    #teacher-dashboard .muted { color: var(--muted); font-size: 0.9rem; }
+
+    /* Juice */
+    body.screen-shake { animation: screenShake 0.4s ease-out; }
+    @keyframes screenShake { 0%,100%{ transform: translate(0,0); } 15%{ transform: translate(-4px,2px); } 30%{ transform: translate(4px,-2px); } 45%{ transform: translate(-3px,-3px); } 60%{ transform: translate(3px,2px); } 75%{ transform: translate(-2px,3px); } }
+    body.success-burst { animation: successBurst 0.5s ease-out; }
+    @keyframes successBurst { 0%{ filter: brightness(1); } 30%{ filter: brightness(1.4); } 100%{ filter: brightness(1); } }
+    #sound-toggle { width: 40px; height: 40px; border-radius: 50%; background: rgba(26,26,46,0.9); border: 2px solid rgba(255,255,255,0.15); color: var(--text); cursor: pointer; font-size: 1.2rem; display: none; align-items: center; justify-content: center; }
+    #sound-toggle.visible { display: flex; }
+    #catch-mode-toggle {
+      height: 40px;
+      border-radius: 999px;
+      background: rgba(26,26,46,0.9);
+      border: 2px solid rgba(255,255,255,0.15);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0 0.8rem;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(8px);
+    }
+    #catch-mode-toggle.visible { display: flex; }
+
+    /* Math always LTR; question centered and on one line, above answers area */
+    .quiz-math-wrap { direction: ltr; unicode-bidi: isolate; text-align: left; }
+    #quiz-screen .quiz-math-wrap:first-child { width: 100%; max-width: 100%; text-align: center; position: relative; z-index: 22; }
+    #quiz-subtitle { position: relative; z-index: 22; }
+
+    /* Quiz background (transparent so camera shows through) + Hall of Fame panel */
+    #quiz-bg-progression {
+      position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(0,0,0,0.08) 0%, transparent 50%, transparent 100%);
+    }
+    /* Hall of Fame – one column per side, 15 rows, framed scroll (gallery), no page scroll */
+    #hall-of-fame {
+      position: fixed; left: 0; right: 0; top: 4.5rem; bottom: 0; z-index: -1; pointer-events: none;
+      overflow: hidden;
+    }
+    #hall-of-fame .hall-of-fame-panel {
+      position: absolute;
+      top: 0.5rem; bottom: 0.5rem;
+      width: 22%;
+      box-sizing: border-box;
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 0;
+      background: linear-gradient(160deg, rgba(45,25,55,0.72) 0%, rgba(25,15,35,0.75) 100%);
+      border: 3px solid rgba(218,165,32,0.5);
+      border-radius: 8px;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    #hall-of-fame .hall-of-fame-panel::before {
+      content: ''; position: absolute; left: 0; right: 0; top: 0; height: 10px;
+      background: linear-gradient(90deg, transparent, rgba(218,165,32,0.35), rgba(255,215,0,0.45), rgba(218,165,32,0.35), transparent);
+      pointer-events: none;
+      z-index: 1;
+      flex-shrink: 0;
+    }
+    #hall-of-fame .hall-of-fame-gallery {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding: 0.5rem 0.4rem 0.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    #hall-of-fame .hall-of-fame-gallery::-webkit-scrollbar { width: 4px; }
+    #hall-of-fame .hall-of-fame-gallery::-webkit-scrollbar-thumb { background: rgba(218,165,32,0.4); border-radius: 4px; }
+    #hall-of-fame-left {
+      left: 0.4rem;
+      border-right: 3px solid rgba(218,165,32,0.5);
+    }
+    #hall-of-fame-right {
+      right: 0.4rem;
+      border-left: 3px solid rgba(218,165,32,0.5);
+    }
+    #hall-of-fame .hall-of-fame-frame {
+      flex-shrink: 0;
+      width: 100%;
+      max-width: 100%;
+      aspect-ratio: 3/4;
+      min-height: 72px;
+      background: linear-gradient(145deg, #d4af37 0%, #b8860b 40%, #8b6914 100%);
+      border: 2px solid rgba(255,215,0,0.5);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 3px rgba(255,255,255,0.12), 0 2px 10px rgba(0,0,0,0.4);
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      overflow: hidden;
+      position: relative;
+      padding: 3% 3% 1% 3%;
+      box-sizing: border-box;
+    }
+    #hall-of-fame .hall-of-fame-frame-inner {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      background: linear-gradient(180deg, #1a0a1a 0%, #0d0512 100%);
+      border: 2px solid rgba(139,69,19,0.5);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #hall-of-fame .hall-of-fame-frame-inner img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #hall-of-fame .hall-of-fame-frame-inner .frame-emoji {
+      font-size: clamp(1.6rem, 4.5vw, 2.6rem);
+      line-height: 1;
+      color: rgba(255,255,255,0.55);
+    }
+    #hall-of-fame .hall-of-fame-frame-label-slot {
+      position: relative;
+      flex-shrink: 0;
+      height: 1.75em;
+      width: 100%;
+      margin-top: auto;
+    }
+    #hall-of-fame .hall-of-fame-frame-label-slot .rarity-badge,
+    #hall-of-fame .hall-of-fame-frame-label-slot .hall-of-fame-frame-name,
+    #hall-of-fame .hall-of-fame-frame-label-slot .hall-of-fame-frame-count {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      text-align: center;
+      margin: 0;
+      display: block;
+    }
+    #hall-of-fame .hall-of-fame-frame-label-slot .rarity-badge {
+      font-size: 0.5rem;
+      padding: 0.15rem 0.35rem;
+      animation: frameLabelRarity 6s ease-in-out infinite;
+    }
+    #hall-of-fame .hall-of-fame-frame-label-slot .hall-of-fame-frame-name {
+      font-family: 'Cormorant Garamond', 'Times New Roman', serif;
+      font-size: clamp(0.48rem, 1.4vw, 0.65rem);
+      font-weight: 600;
+      font-style: italic;
+      color: #e8dcc4;
+      padding: 0.1rem 0.25rem;
+      background: none;
+      border: none;
+      letter-spacing: 0.02em;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+      line-height: 1.2;
+      animation: frameLabelName 6s ease-in-out infinite;
+    }
+    #hall-of-fame .hall-of-fame-frame-label-slot .hall-of-fame-frame-count {
+      font-size: clamp(0.5rem, 1.6vw, 0.65rem);
+      font-weight: 700;
+      color: #ffd700;
+      padding: 0.1rem 0;
+      text-shadow: 0 0 6px rgba(0,0,0,0.8), 0 1px 2px rgba(255,215,0,0.4);
+      animation: frameLabelCount 6s ease-in-out infinite;
+    }
+    @keyframes frameLabelRarity {
+      0%, 30% { opacity: 1; }
+      33%, 100% { opacity: 0; }
+    }
+    @keyframes frameLabelName {
+      0%, 30% { opacity: 0; }
+      33%, 63% { opacity: 1; }
+      66%, 100% { opacity: 0; }
+    }
+    @keyframes frameLabelCount {
+      0%, 63% { opacity: 0; }
+      66%, 97% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <video id="camera-video" autoplay playsinline muted></video>
+  <canvas id="xr-canvas"></canvas>
+  <div id="finger-cursor" aria-hidden="true"></div>
+
+  <div id="identity-screen">
+    <h1 class="start-title">GoBeyond</h1>
+    <p class="start-sub" id="identity-sub">Enter your nickname to start</p>
+    <div class="lang-selector">
+      <label for="lang-select-identity" id="lang-label-identity">Language</label>
+      <select id="lang-select-identity" class="lang-select" aria-label="Language">
+        <option value="en">English</option>
+        <option value="he">עברית</option>
+      </select>
+    </div>
+    <input type="text" id="input-nickname" placeholder="Nickname" maxlength="24" autocomplete="off" />
+    <input type="text" id="input-class-code" placeholder="Class code (optional)" maxlength="12" autocomplete="off" />
+    <button type="button" class="btn btn-primary" id="btn-identity-go">Continue</button>
+    <button type="button" class="switch-profile" id="btn-switch-profile">Switch profile</button>
+  </div>
+
+  <div id="start-screen">
+    <h1 class="start-title">GoBeyond</h1>
+    <p class="start-sub" id="start-sub">Solve math challenges and collect characters in AR</p>
+    <div class="lang-selector">
+      <label for="lang-select-start" id="lang-label-start">Language</label>
+      <select id="lang-select-start" class="lang-select" aria-label="Language">
+        <option value="en">English</option>
+        <option value="he">עברית</option>
+      </select>
+    </div>
+    <div class="start-btns">
+      <button type="button" class="btn btn-primary" id="btn-start-ar">Start in AR (WebXR)</button>
+      <button type="button" class="btn btn-secondary" id="btn-start-camera">Start with camera</button>
+    </div>
+    <p class="teacher-dashboard-link"><a href="#" id="link-teacher-dashboard">Teacher dashboard</a></p>
+  </div>
+
+  <div id="profile-badge" aria-label="Logged in profile"></div>
+  <div id="ball-counter" aria-label="Capture balls"><span class="ball-ico">⚾</span><span id="ball-count">0</span></div>
+  <button type="button" class="btn-album" id="btn-album" aria-label="Open album">📖 Album</button>
+  <button type="button" class="btn-back-menu" id="btn-back-menu" aria-label="Back to main menu">Menu</button>
+  <button type="button" id="sound-toggle" aria-label="Sound on/off">🔊</button>
+  <button type="button" id="catch-mode-toggle" aria-label="Catch mode">Mode</button>
+  <button type="button" id="btn-question-type" class="btn-question-type" aria-label="Question type">Math</button>
+
+  <div id="ar-overlay" style="display: none;">
+    <div id="quiz-bg-progression" aria-hidden="true">
+      <div id="hall-of-fame" aria-label="Hall of Fame">
+        <div id="hall-of-fame-left" class="hall-of-fame-panel" aria-hidden="true"></div>
+        <div id="hall-of-fame-right" class="hall-of-fame-panel" aria-hidden="true"></div>
+      </div>
+    </div>
+    <!-- Quiz -->
+    <section class="screen active" id="quiz-screen" aria-label="GoBeyond quiz">
+      <div class="quiz-math-wrap">
+        <h1 id="quiz-title" dir="ltr">6 + 7 = ?</h1>
+        <div id="spelling-picture-frame" class="spelling-picture-frame" aria-hidden="true"><img id="spelling-picture-img" alt="" /></div>
+        <div id="spelling-underlines" class="spelling-underlines" aria-hidden="true"></div>
+      </div>
+      <div id="found-answers-area" class="found-answers-area" aria-hidden="true">
+        <div class="found-top-row">
+          <div id="found-current-square" class="found-square hidden" aria-label="Currently finding answer">
+            <div id="found-current-content" class="found-square-content" aria-hidden="true"></div>
+            <div class="found-square-progress" aria-hidden="true"><div id="found-current-progress" class="found-square-progress-fill"></div></div>
+          </div>
+          <div id="found-counter" class="found-counter">Found 0/0</div>
+        </div>
+        <div id="found-collected-row" class="found-collected-row" aria-label="Collected answers"></div>
+      </div>
+      <p class="subtitle" id="quiz-subtitle">Tilt or drag to find the answers, then tap the correct one</p>
+      <div class="answers quiz-math-wrap" id="answers-container" dir="ltr"></div>
+    </section>
+
+    <!-- Character on floor: bubble + tap ball to throw + skip -->
+    <section class="screen" id="dance-screen">
+      <p class="success-badge dance-overlay"><span class="icon">🎉</span><span id="great-job-text"> Great Job!</span></p>
+      <div id="character-bubble" class="character-bubble">
+        <strong id="bubble-name"></strong>
+        <p id="bubble-desc" class="bubble-desc"></p>
+        <p id="bubble-blurb" class="bubble-blurb"></p>
+      </div>
+      <canvas id="three-canvas"></canvas>
+      <div id="capture-actions">
+        <button type="button" id="throw-ball-btn" class="ball-btn" aria-label="Throw ball">⚾</button>
+        <p class="ball-hint" id="ball-hint">Tap the ball to throw</p>
+        <button type="button" class="btn btn-secondary btn-skip" id="btn-skip-capture">Next question</button>
+      </div>
+      <div id="ball-fly-el" class="ball-fly-el" aria-hidden="true">⚾</div>
+      <p id="capture-feedback" class="capture-feedback"></p>
+    </section>
+
+    <!-- Success + character (legacy / fallback) -->
+    <section class="screen" id="success-screen">
+      <p class="success-badge"><span class="icon">📖</span><span id="add-to-album-badge"> Add to Album</span></p>
+      <p class="collect-prompt" id="tap-character-prompt">Tap the character to add to your Album</p>
+      <div class="character-card" id="character-card" tabindex="0" role="button"></div>
+    </section>
+
+    <!-- Added to album -->
+    <section class="screen" id="added-screen">
+      <p class="success-badge"><span class="icon">📖</span><span id="album-badge-added"> Album</span></p>
+      <p class="album-added-msg"><strong id="added-name"></strong> <span id="album-added-suffix">has been collected to your Album!</span></p>
+      <button type="button" class="btn btn-next" id="btn-next-after-add">Next challenge</button>
+    </section>
+
+    <!-- All done -->
+    <section class="screen" id="done-screen">
+      <p class="success-badge"><span class="icon">🏆</span><span id="all-done-badge"> All done!</span></p>
+      <p id="open-album-prompt">You've collected all characters. Open your Album to see them.</p>
+      <button type="button" class="btn btn-primary" id="btn-open-album-final">Open Album</button>
+    </section>
+  </div>
+
+  <!-- Teacher dashboard overlay -->
+  <div id="teacher-dashboard">
+    <div class="section">
+      <h2 id="td-heading">Teacher Dashboard</h2>
+      <div class="filters">
+        <select id="td-class"><option value="">All classes</option></select>
+        <select id="td-student"><option value="">All students</option></select>
+        <select id="td-daterange"><option value="today">Today</option><option value="7">Last 7 days</option><option value="all">All time</option></select>
+        <button type="button" class="btn btn-secondary btn-demo" id="td-seed-demo">Seed demo data</button>
+        <button type="button" class="btn btn-secondary btn-demo" id="td-reset-demo">Reset demo data</button>
+      </div>
+      <button type="button" class="btn album-close" id="teacher-close">Close</button>
+    </div>
+    <div class="section"><h2 id="td-mastery-title">Mastery by skill</h2><div id="td-mastery"></div></div>
+    <div class="section"><h2 id="td-misconception-title">Misconception signals</h2><div id="td-misconception"></div></div>
+    <div class="section"><h2 id="td-intervention-title">Intervention list</h2><div id="td-intervention"></div></div>
+    <div class="section"><h2 id="td-assignment-title">Assignment builder</h2><div id="td-assignment"></div></div>
+    <div class="section"><h2 id="td-economy-title">Item economy</h2><div id="td-economy"></div></div>
+  </div>
+
+  <!-- Album panel (full screen) -->
+  <div id="album-panel">
+    <div class="album-header">
+      <h2 class="album-title" id="album-title">My Album</h2>
+      <button type="button" class="btn btn-secondary album-reset" id="album-reset">Reset collected</button>
+      <button type="button" class="album-close" id="album-close">Close</button>
+    </div>
+    <div class="album-grid" id="album-grid"></div>
+  </div>
+
+  <!-- Album blurb modal -->
+  <div id="album-blurb-modal" class="album-blurb-modal">
+    <div class="album-blurb-content">
+      <h3 id="album-blurb-name"></h3>
+      <p id="album-blurb-text"></p>
+      <button type="button" class="btn album-close" id="album-blurb-close">Close</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+    const STORAGE_KEY = 'math-ar-album';
+    const STORAGE_LANG = 'gobeyond-lang';
+    const STORAGE_PROFILES = 'gobeyond-profiles';
+    const STORAGE_EVENTS = 'gobeyond-events';
+    const STORAGE_ASSIGNMENTS = 'gobeyond-assignments';
+
+    const I18N = {
+      en: {
+        identity_sub: 'Enter your nickname to start',
+        nickname_placeholder: 'Nickname',
+        class_placeholder: 'Class code (optional)',
+        continue_btn: 'Continue',
+        switch_profile: 'Switch profile',
+        start_sub: 'Solve math challenges and collect characters in AR',
+        start_ar: 'Start in AR (WebXR)',
+        start_camera: 'Start with camera',
+        teacher_dashboard: 'Teacher dashboard',
+        teacher_btn: 'Teacher',
+        back_to_menu: 'Menu',
+        album_btn: 'Album',
+        quiz_subtitle: 'Tilt or drag to find the answers, then tap the correct one',
+        selecting_in: 'Selecting in %ds…',
+        selecting: 'Selecting…',
+        great_job: 'Great Job!',
+        tap_ball: 'Tap the ball to throw',
+        next_question: 'Next question',
+        add_to_album: 'Add to Album',
+        tap_character: 'Tap the character to add to your Album',
+        album: 'Album',
+        collected_to_album: 'has been collected to your Album!',
+        next_challenge: 'Next challenge',
+        all_done: 'All done!',
+        open_album_prompt: "You've collected all characters. Open your Album to see them.",
+        open_album: 'Open Album',
+        my_album: 'My Album',
+        reset_collected: 'Reset collected',
+        close: 'Close',
+        info_btn: 'Info',
+        not_collected: 'Not collected',
+        collected_once: 'Collected 1 time',
+        collected_times: 'Collected %d times',
+        confirm_reset: 'Reset all collected characters? This cannot be undone.',
+        td_title: 'Teacher Dashboard',
+        all_classes: 'All classes',
+        all_students: 'All students',
+        today: 'Today',
+        last_7: 'Last 7 days',
+        all_time: 'All time',
+        seed_demo: 'Seed demo data',
+        reset_demo: 'Reset demo data',
+        mastery: 'Mastery by skill',
+        misconception: 'Misconception signals',
+        intervention: 'Intervention list',
+        assignment: 'Assignment builder',
+        economy: 'Item economy',
+        language: 'Language'
+      },
+      he: {
+        identity_sub: 'הכנס כינוי כדי להתחיל',
+        nickname_placeholder: 'כינוי',
+        class_placeholder: 'קוד כיתה (אופציונלי)',
+        continue_btn: 'המשך',
+        switch_profile: 'החלף פרופיל',
+        start_sub: 'פתור אתגרי מתמטיקה ואסוף דמויות במציאות רבודה',
+        start_ar: 'התחל במציאות רבודה (WebXR)',
+        start_camera: 'התחל עם מצלמה',
+        teacher_dashboard: 'לוח מורה',
+        teacher_btn: 'מורה',
+        back_to_menu: 'תפריט',
+        album_btn: 'אלבום',
+        quiz_subtitle: 'הטה או גרור כדי למצוא את התשובות, ואז הקש על הנכונה',
+        selecting_in: 'בוחר בעוד %d שניות…',
+        selecting: 'בוחר…',
+        great_job: 'כל הכבוד!',
+        tap_ball: 'הקש על הכדור כדי לזרוק',
+        next_question: 'שאלה הבאה',
+        add_to_album: 'הוסף לאלבום',
+        tap_character: 'הקש על הדמות כדי להוסיף לאלבום',
+        album: 'אלבום',
+        collected_to_album: 'נאסף לאלבום שלך!',
+        next_challenge: 'אתגר הבא',
+        all_done: 'סיימת!',
+        open_album_prompt: 'אספת את כל הדמויות. פתח את האלבום כדי לראות.',
+        open_album: 'פתח אלבום',
+        my_album: 'האלבום שלי',
+        reset_collected: 'אפס איסוף',
+        close: 'סגור',
+        info_btn: 'מידע',
+        not_collected: 'לא נאסף',
+        collected_once: 'נאסף פעם אחת',
+        collected_times: 'נאסף %d פעמים',
+        confirm_reset: 'לאפס את כל הדמויות שנאספו? לא ניתן לבטל.',
+        td_title: 'לוח מורה',
+        all_classes: 'כל הכיתות',
+        all_students: 'כל התלמידים',
+        today: 'היום',
+        last_7: '7 ימים אחרונים',
+        all_time: 'כל התקופה',
+        seed_demo: 'טען נתוני דמו',
+        reset_demo: 'אפס נתוני דמו',
+        mastery: 'שליטה לפי נושא',
+        misconception: 'סימני תפיסה שגויה',
+        intervention: 'רשימת התערבות',
+        assignment: 'בניית משימות',
+        economy: 'כלכלת פריטים',
+        language: 'שפה'
+      }
+    };
+    let currentLang = localStorage.getItem(STORAGE_LANG) || 'en';
+    function getLang() { return currentLang; }
+    function setLang(lang) { currentLang = lang; localStorage.setItem(STORAGE_LANG, lang); }
+    function t(key, n) {
+      const s = (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key;
+      return typeof n === 'number' ? s.replace('%d', String(n)) : s;
+    }
+    function charBlurb(ch) {
+      return (currentLang === 'he' && ch.blurb_he) ? ch.blurb_he : (ch.blurb || ch.desc || '');
+    }
+    function applyLang() {
+      document.documentElement.dir = currentLang === 'he' ? 'rtl' : 'ltr';
+      document.documentElement.lang = currentLang;
+      const id = (x) => document.getElementById(x);
+      const set = (el, text) => { if (el) el.textContent = text; };
+      const setPlaceholder = (el, text) => { if (el) el.placeholder = text; };
+      set(id('identity-sub'), t('identity_sub'));
+      setPlaceholder(id('input-nickname'), t('nickname_placeholder'));
+      setPlaceholder(id('input-class-code'), t('class_placeholder'));
+      set(id('btn-identity-go'), t('continue_btn'));
+      set(id('btn-switch-profile'), t('switch_profile'));
+      set(id('start-sub'), t('start_sub'));
+      set(id('btn-start-ar'), t('start_ar'));
+      set(id('btn-start-camera'), t('start_camera'));
+      set(id('link-teacher-dashboard'), t('teacher_dashboard'));
+      if (id('btn-back-menu')) { id('btn-back-menu').textContent = t('back_to_menu'); id('btn-back-menu').setAttribute('aria-label', t('back_to_menu')); }
+      set(id('btn-album'), '📖 ' + t('album_btn'));
+      set(id('quiz-subtitle'), t('quiz_subtitle'));
+      set(id('great-job-text'), t('great_job'));
+      set(id('ball-hint'), t('tap_ball'));
+      set(id('btn-skip-capture'), t('next_question'));
+      set(id('add-to-album-badge'), t('add_to_album'));
+      set(id('tap-character-prompt'), t('tap_character'));
+      set(id('album-badge-added'), t('album'));
+      set(id('btn-next-after-add'), t('next_challenge'));
+      set(id('all-done-badge'), t('all_done'));
+      set(id('open-album-prompt'), t('open_album_prompt'));
+      set(id('btn-open-album-final'), t('open_album'));
+      set(id('album-title'), t('my_album'));
+      set(id('album-reset'), t('reset_collected'));
+      set(id('album-close'), t('close'));
+      set(id('album-blurb-close'), t('close'));
+      set(id('teacher-close'), t('close'));
+      set(id('td-heading'), t('td_title'));
+      set(id('album-added-suffix'), t('collected_to_album'));
+      const tdClass = id('td-class');
+      if (tdClass && tdClass.options[0]) tdClass.options[0].text = t('all_classes');
+      const tdStudent = id('td-student');
+      if (tdStudent && tdStudent.options[0]) tdStudent.options[0].text = t('all_students');
+      const tdRange = id('td-daterange');
+      if (tdRange) {
+        const oToday = tdRange.querySelector('option[value="today"]');
+        const o7 = tdRange.querySelector('option[value="7"]');
+        const oAll = tdRange.querySelector('option[value="all"]');
+        if (oToday) oToday.textContent = t('today');
+        if (o7) o7.textContent = t('last_7');
+        if (oAll) oAll.textContent = t('all_time');
+      }
+      set(id('td-seed-demo'), t('seed_demo'));
+      set(id('td-reset-demo'), t('reset_demo'));
+      set(id('td-mastery-title'), t('mastery'));
+      set(id('td-misconception-title'), t('misconception'));
+      set(id('td-intervention-title'), t('intervention'));
+      set(id('td-assignment-title'), t('assignment'));
+      set(id('td-economy-title'), t('economy'));
+      set(id('lang-label-identity'), t('language'));
+      set(id('lang-label-start'), t('language'));
+      const langSelectId = id('lang-select-identity');
+      const langSelectStart = id('lang-select-start');
+      if (langSelectId) langSelectId.value = currentLang;
+      if (langSelectStart) langSelectStart.value = currentLang;
+    }
+    const FINGER_HOLD_MS = 3000;
+    const DANCE_DURATION_MS = 2500;
+    const INDEX_FINGER_TIP = 8;
+
+    const MATH_SKILLS = ['Addition', 'Subtraction', 'Multiplication', 'Division', 'Mixed/OrderOps'];
+    const SKILLS = MATH_SKILLS;
+    var TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72';
+    const SPELLING_WORDS = [
+      { word: 'cat', icon: '🐱', img: TWEMOJI_BASE + '/1f431.png' }, { word: 'dog', icon: '🐕', img: TWEMOJI_BASE + '/1f415.png' }, { word: 'sun', icon: '☀️', img: TWEMOJI_BASE + '/2600.png' }, { word: 'ball', icon: '⚽', img: TWEMOJI_BASE + '/26bd.png' },
+      { word: 'fish', icon: '🐟', img: TWEMOJI_BASE + '/1f41f.png' }, { word: 'book', icon: '📖', img: TWEMOJI_BASE + '/1f4d6.png' }, { word: 'star', icon: '⭐', img: TWEMOJI_BASE + '/2b50.png' }, { word: 'tree', icon: '🌳', img: TWEMOJI_BASE + '/1f333.png' },
+      { word: 'moon', icon: '🌙', img: TWEMOJI_BASE + '/1f319.png' }, { word: 'bird', icon: '🐦', img: TWEMOJI_BASE + '/1f426.png' }, { word: 'apple', icon: '🍎', img: TWEMOJI_BASE + '/1f34e.png' }, { word: 'heart', icon: '❤️', img: TWEMOJI_BASE + '/2764.png' },
+      { word: 'house', icon: '🏠', img: TWEMOJI_BASE + '/1f3e0.png' }, { word: 'water', icon: '💧', img: TWEMOJI_BASE + '/1f4a7.png' }, { word: 'happy', icon: '😊', img: TWEMOJI_BASE + '/1f60a.png' }, { word: 'school', icon: '🏫', img: TWEMOJI_BASE + '/1f3eb.png' },
+      { word: 'friend', icon: '🤝', img: TWEMOJI_BASE + '/1f91d.png' }, { word: 'flower', icon: '🌸', img: TWEMOJI_BASE + '/1f338.png' }, { word: 'music', icon: '🎵', img: TWEMOJI_BASE + '/1f3b5.png' }, { word: 'pencil', icon: '✏️', img: TWEMOJI_BASE + '/270f.png' }
+    ];
+    let questionType = (function () {
+      try { return localStorage.getItem('gobeyond-question-type') || 'math'; } catch (_) { return 'math'; }
+    })();
+    const RARITY_BASE_CHANCE = { common: 0.8, rare: 0.55, epic: 0.3, legendary: 0.15, mythic: 0.05 };
+    /* Appearance weight: characters that are harder to catch (lower base chance) appear less often. */
+    const RARITY_APPEARANCE_WEIGHT = { common: 4, rare: 2.5, epic: 1.2, legendary: 0.5, mythic: 0.2 };
+    const RARITY_LABELS = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary', mythic: 'Mythical' };
+    const BALLS_PER_CORRECT = 1;
+    const CORRECT_FOR_BALL = 1;
+    const STREAK_BONUS_BALLS = [0, 0, 1, 2];
+    const PITY_CAP = 10;
+    const PITY_BONUS_PER_FAIL = 0.05;
+    const THROW_QUALITY_MULT = { 0: 0.5, 1: 0.85, 2: 1.1, 3: 1.35 };
+    const SWIPE_MIN_DY = 40;
+    const SWIPE_MIN_VELOCITY = 0.15;
+
+    let currentProfile = null;
+    let sessionId = null;
+    let sessionStartTime = null;
+
+    function getProfiles() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_PROFILES) || '[]'); } catch (_) { return []; }
+    }
+    function saveProfile(nickname, classCode) {
+      const profiles = getProfiles();
+      const id = 's_' + Math.random().toString(36).slice(2, 11);
+      const p = { studentId: id, nickname: (nickname || 'Student').trim().slice(0, 24), classCode: (classCode || '').trim().slice(0, 12) };
+      profiles.push(p);
+      localStorage.setItem(STORAGE_PROFILES, JSON.stringify(profiles));
+      return p;
+    }
+    function getEvents() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_EVENTS) || '[]'); } catch (_) { return []; }
+    }
+    function pushEvent(event) {
+      const events = getEvents();
+      events.push({ ...event, ts: Date.now() });
+      localStorage.setItem(STORAGE_EVENTS, JSON.stringify(events.slice(-5000)));
+    }
+    function getAssignments() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_ASSIGNMENTS) || '[]'); } catch (_) { return []; }
+    }
+    function saveAssignment(a) {
+      const list = getAssignments();
+      list.push(a);
+      localStorage.setItem(STORAGE_ASSIGNMENTS, JSON.stringify(list));
+    }
+
+    const CHARACTER_POOL = [
+      { name: 'Albert Einstein', emoji: '🧑‍🔬', desc: 'Physicist', blurb: 'Developed the theory of relativity and won the Nobel Prize. Famous for E=mc².', blurb_he: 'פיתח את תורת היחסות וזכה בפרס נובל. מפורסם בנוסחה E=mc².', rarity: 'mythic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/d/d3/Albert_Einstein_Head.jpg' },
+      { name: 'Marie Curie', emoji: '👩‍🔬', desc: 'Scientist', blurb: 'First woman to win a Nobel Prize, in two sciences: Physics and Chemistry.', blurb_he: 'האישה הראשונה שזכתה בפרס נובל, בשני מדעים: פיזיקה וכימיה.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/c/c8/Marie_Curie_c._1920s.jpg' },
+      { name: 'Lionel Messi', emoji: '⚽', desc: 'Soccer player', blurb: 'One of the greatest footballers of all time. Multiple Ballon d\'Or winner and World Cup champion.', blurb_he: 'אחד מגדולי הכדורגלנים בכל הזמנים. זוכה בבallon d\'Or וביורו ובמונדיאל.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/b/b4/Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg' },
+      { name: 'Beyoncé', emoji: '🎤', desc: 'Singer & performer', blurb: 'Global superstar known for hits like Single Ladies and Formation. One of the best-selling music artists.', blurb_he: 'כוכבת עולמית עם להיטים כמו Single Ladies. אחת האמניות הנמכרות בעולם.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/e/e7/Beyonce_at_Barclays_Center_2013.jpg' },
+      { name: 'Nelson Mandela', emoji: '✊', desc: 'Leader & activist', blurb: 'Fought against apartheid in South Africa. Became president and a global symbol of peace and justice.', blurb_he: 'נלחם באפרטהייד בדרום אפריקה. נשיא וסמל עולמי לשלום וצדק.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/0/02/Nelson_Mandela_1994.jpg' },
+      { name: 'Ada Lovelace', emoji: '👩‍💻', desc: 'First programmer', blurb: 'Considered the first computer programmer for her work on the Analytical Engine.', blurb_he: 'נחשבת למתכנתת הראשונה בזכות עבודתה על מנוע האנליזה.', rarity: 'rare', portrait: 'https://upload.wikimedia.org/wikipedia/commons/8/87/Ada_Lovelace.jpg' },
+      { name: 'Pele', emoji: '⚽', desc: 'Soccer legend', blurb: 'Brazilian football icon. Won three World Cups and scored over 1,000 goals in his career.', blurb_he: 'איקון כדורגל ברזילאי. זכה בשלושה מונדיאלים וכבש מעל 1,000 שערים.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/f/fe/Pel%C3%A9_%281966%29.jpg' },
+      { name: 'Taylor Swift', emoji: '🎸', desc: 'Singer-songwriter', blurb: 'One of the best-selling artists ever. Known for storytelling in pop and country music.', blurb_he: 'אחת האמניות הנמכרות אי פעם. מפורסמת בסיפורים במוזיקת פופ וקאנטרי.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Taylor_Swift_2018.jpg' },
+      { name: 'Malala Yousafzai', emoji: '📚', desc: 'Activist', blurb: 'Youngest Nobel Peace Prize winner. Fights for girls\' right to education worldwide.', blurb_he: 'זוכת פרס נובל לשלום הצעירה ביותר. נלחמת על חינוך לבנות בעולם.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/f/fe/Malala_Yousafzai_2015.jpg' },
+      { name: 'Leonardo da Vinci', emoji: '🎨', desc: 'Artist & inventor', blurb: 'Renaissance genius who painted the Mona Lisa and designed inventions ahead of his time.', blurb_he: 'גאון הרנסנס שצייר את המונה ליזה ועיצב המצאות לפני זמנו.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/b/ba/Leonardo_self.jpg' },
+      { name: 'David Ben-Gurion', emoji: '🇮🇱', desc: 'Israeli leader', blurb: 'First Prime Minister of Israel. Led the country through its founding and early years.', blurb_he: 'ראש ממשלת ישראל הראשון. הוביל את המדינה בימיה הראשונים.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/e/e8/David_Ben-Gurion_%28D597-087%29.jpg' },
+      { name: 'Frida Kahlo', emoji: '🖼️', desc: 'Artist', blurb: 'Mexican painter known for self-portraits and bold, symbolic art. A cultural icon.', blurb_he: 'ציירת מקסיקנית מפורסמת בדיוקנאות עצמיים ובאמנות סמלית. אייקון תרבותי.', rarity: 'rare', portrait: 'https://upload.wikimedia.org/wikipedia/commons/0/0f/Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg' },
+      { name: 'Stephen Hawking', emoji: '🧑‍🔬', desc: 'Physicist', blurb: 'Explored black holes and the Big Bang. Wrote A Brief History of Time.', blurb_he: 'חקר חורים שחורים והמפץ הגדול. כתב את "קיצור תולדות הזמן".', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Stephen_Hawking.StarChild.jpg' },
+      { name: 'Serena Williams', emoji: '🎾', desc: 'Tennis champion', blurb: 'One of the greatest tennis players. Multiple Grand Slam titles and Olympic gold medals.', blurb_he: 'אחת מגדולות הטניסאיות. זכיות רבות בגראנד סלאם ובמדליות זהב אולימפיות.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/d/d3/Serena_Williams_at_the_Australian_Open_2015_%28headshot%29.jpg' },
+      { name: 'Martin Luther King Jr.', emoji: '✊', desc: 'Civil rights leader', blurb: 'Led the civil rights movement in the USA. His "I Have a Dream" speech inspired millions.', blurb_he: 'הוביל את תנועת זכויות האזרח בארה"ב. נאום "יש לי חלום" ריגש מיליונים.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/4/4e/Martin_Luther_King%2C_Jr._%283x4_cropped%29.jpg' },
+      { name: 'Queen Elizabeth II', emoji: '👑', desc: 'British monarch', blurb: 'Longest-reigning British monarch. Served as queen for over 70 years.', blurb_he: 'המונרך הבריטי ששימש הכי הרבה שנים. מלכה למעלה מ-70 שנה.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/b/b6/Queen_Elizabeth_II_in_March_2015.jpg' },
+      { name: 'Pythagoras', emoji: '🧙', desc: 'Mathematician', blurb: 'Ancient Greek known for the Pythagorean theorem: a² + b² = c².', blurb_he: 'יווני קדום שמפורסם במשפט פיתגורס: a² + b² = c².', rarity: 'common', portrait: 'https://upload.wikimedia.org/wikipedia/commons/1/18/Cropped_image_of_Pythagoras_from_Raphael%27s_School_of_Athens.jpg' },
+      { name: 'Euclid', emoji: '📐', desc: 'Mathematician', blurb: 'Father of geometry. His book Elements shaped mathematics for over 2,000 years.', blurb_he: 'אבי הגאומטריה. ספרו "יסודות" עיצב את המתמטיקה למעלה מ-2,000 שנה.', rarity: 'common', portrait: 'https://upload.wikimedia.org/wikipedia/commons/2/22/Euklid-von-Alexandria_1.jpg' },
+      { name: 'Hypatia', emoji: '🔬', desc: 'Philosopher & mathematician', blurb: 'Head of the Neoplatonic school in Alexandria. Scholar of mathematics and astronomy.', blurb_he: 'עמדה בראש האסכולה הניאופלאטונית באלכסנדריה. חוקרת מתמטיקה ואסטרונומיה.', rarity: 'common', portrait: 'https://upload.wikimedia.org/wikipedia/commons/4/4e/Hypatia_portrait.png' },
+      { name: 'Michael Jordan', emoji: '🏀', desc: 'Basketball legend', blurb: 'Considered the greatest basketball player. Six NBA championships with the Chicago Bulls.', blurb_he: 'נחשב לגדול שחקני הכדורסל. שש אליפויות NBA עם שיקגו בולס.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/a/ae/Michael_Jordan_in_2014.jpg' },
+      { name: 'Walt Disney', emoji: '🎬', desc: 'Filmmaker & creator', blurb: 'Created Mickey Mouse and built an empire of animation and theme parks.', blurb_he: 'יצר את מיקי מאוס ובנה אימפריה של אנימציה ופארקי שעשועים.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/d/df/Walt_Disney_1946.JPG' },
+      { name: 'Cleopatra', emoji: '👑', desc: 'Ancient ruler', blurb: 'Last active pharaoh of Egypt. Known for her intelligence and political skill.', blurb_he: 'הפרעה האחרון של מצרים. מפורסמת בתבונה ובכישרון פוליטי.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Marble_portrait_head_of_Cleopatra_VII%2C_known_as_the_%27Berlin_Cleopatra%27.jpg' },
+      { name: 'Usain Bolt', emoji: '🏃', desc: 'Sprinter', blurb: 'Fastest person ever recorded. Olympic champion and world record holder in the 100m and 200m.', blurb_he: 'האדם המהיר ביותר שתועד. אלוף אולימפי ושיאן עולם ב-100 ו-200 מטר.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/7/71/Usain_Bolt_portrait.jpg' },
+      { name: 'Anne Frank', emoji: '📖', desc: 'Writer', blurb: 'Her diary from hiding in WWII became one of the most read books in the world.', blurb_he: 'יומנה מהמסתור במלחמת העולם השנייה הפך לאחד הספרים הנקראים בעולם.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/7/74/AnneFrank1940.jpg' },
+      { name: 'Isaac Newton', emoji: '🍎', desc: 'Physicist', blurb: 'Formulated the laws of motion and gravity. An apple falling inspired his ideas.', blurb_he: 'ניסח את חוקי התנועה והכבידה. תפוח שנפל נתן לו השראה.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/3/39/GodfreyKneller-IsaacNewton-1689.jpg' },
+      { name: 'Rosa Parks', emoji: '🚌', desc: 'Civil rights icon', blurb: 'Refused to give up her bus seat, sparking the Montgomery bus boycott and the civil rights movement.', blurb_he: 'סירבה לפנות את מושבה באוטובוס והציתה את חרם מונטגומרי ותנועת זכויות האזרח.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/a/af/Rosa_Parks.jpg' },
+      { name: 'William Shakespeare', emoji: '🎭', desc: 'Playwright', blurb: 'Greatest writer in the English language. Wrote Hamlet, Romeo and Juliet, and many more.', blurb_he: 'הסופר הגדול ביותר בשפה האנגלית. כתב את המלט, רומיאו ויוליה ועוד.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/a/a2/Shakespeare.jpg' },
+      { name: 'Cristiano Ronaldo', emoji: '⚽', desc: 'Soccer superstar', blurb: 'One of the greatest footballers. Multiple Ballon d\'Or winner, Champions League and Euro champion.', blurb_he: 'אחד מגדולי הכדורגלנים. זוכה בבallon d\'Or, ליגת האלופות ויורו.', rarity: 'legendary', portrait: 'https://upload.wikimedia.org/wikipedia/commons/8/8c/Cristiano_Ronaldo_2018.jpg' },
+      { name: 'Oprah Winfrey', emoji: '📺', desc: 'Media mogul', blurb: 'Talk show host, producer, and philanthropist. One of the most influential women in media.', blurb_he: 'מנחת טלוויזיה, מפיקה ופילנתרופית. אחת הנשים המשפיעות בתקשורת.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/6/65/Oprah_closeup.jpg' },
+      { name: 'Neil Armstrong', emoji: '🚀', desc: 'Astronaut', blurb: 'First person to walk on the Moon. Said: "That\'s one small step for man, one giant leap for mankind."', blurb_he: 'האדם הראשון שצעד על הירח. "צעד קטן לאדם, קפיצה גדולה לאנושות."', rarity: 'mythic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/0/0d/Neil_Armstrong_pose.jpg' },
+      { name: 'Coco Chanel', emoji: '👗', desc: 'Fashion designer', blurb: 'Revolutionized women\'s fashion. Created the little black dress and the iconic Chanel brand.', blurb_he: 'מהפכנית באופנת נשים. יצרה את השמלה השחורה הקטנה ואת מותג שאנל.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/f/f3/Coco_Chanel%2C_ca_1920.jpg' },
+      { name: 'Bruce Lee', emoji: '🥋', desc: 'Martial artist & actor', blurb: 'Legendary martial artist and film star. Brought kung fu to global cinema and popular culture.', blurb_he: 'אמן לחימה וכוכב קולנוע. הביא את הקונג פו לקולנוע ולתרבות העולמית.', rarity: 'epic', portrait: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/Bruce_Lee_1973.jpg' },
+    ];
+    let currentDifficulty = 3;
+    let currentSkillIndex = 0;
+    let currentGeneratedQuestion = null;
+
+    function generateQuestion(skill, difficulty) {
+      const scale = Math.min(10, Math.max(1, difficulty));
+      const range = 5 + scale * 4;
+      const useThree = Math.random() < 0.4;
+      let a = Math.floor(Math.random() * range) + 1;
+      let b = Math.floor(Math.random() * range) + 1;
+      let c = Math.floor(Math.random() * range) + 1;
+      let question = '';
+      let correct = 0;
+      if (skill === 'Addition') {
+        if (useThree) { correct = a + b + c; question = a + ' + ' + b + ' + ' + c + ' = ?'; }
+        else { correct = a + b; question = a + ' + ' + b + ' = ?'; }
+      } else if (skill === 'Subtraction') {
+        if (useThree) { a = Math.floor(Math.random() * (range - 2)) + 4; b = Math.floor(Math.random() * (a - 2)) + 1; c = Math.floor(Math.random() * (a - b + 1)); correct = a - b - c; question = a + ' − ' + b + ' − ' + c + ' = ?'; }
+        else { if (a < b) [a, b] = [b, a]; correct = a - b; question = a + ' − ' + b + ' = ?'; }
+      } else if (skill === 'Multiplication') {
+        if (useThree) { a = Math.min(6, a); b = Math.min(6, b); c = Math.min(6, c); correct = a * b * c; question = a + ' × ' + b + ' × ' + c + ' = ?'; }
+        else { a = Math.min(12, a); b = Math.min(12, b); correct = a * b; question = a + ' × ' + b + ' = ?'; }
+      } else if (skill === 'Division') { b = Math.max(1, b); a = a * b; correct = a / b; question = a + ' ÷ ' + b + ' = ?'; }
+      else {
+        if (useThree) { correct = a + b + c; question = a + ' + ' + b + ' + ' + c + ' = ?'; }
+        else { correct = a + b; question = a + ' + ' + b + ' = ?'; }
+      }
+      const wrong = new Set([correct]);
+      while (wrong.size < 4) { wrong.add(correct + (Math.random() > 0.5 ? 1 : -1) * (Math.floor(Math.random() * 5) + 1)); }
+      const answers = [...wrong];
+      return { question, answers: answers, correct, skill, difficulty };
+    }
+    function generateSpellingQuestion() {
+      const item = SPELLING_WORDS[Math.floor(Math.random() * SPELLING_WORDS.length)];
+      const word = item.word;
+      const letters = word.split('');
+      const answers = [...letters].sort(function () { return Math.random() - 0.5; });
+      return { question: item.icon, word: word, answers: answers, correct: word, skill: 'Spelling', icon: item.icon, img: item.img };
+    }
+
+    /* Build a list of challenges; skills come from questionType (math only or spelling only). */
+    function buildChallenges() {
+      const skills = questionType === 'spelling' ? ['Spelling'] : MATH_SKILLS;
+      const totalWeight = CHARACTER_POOL.reduce(function (sum, ch) {
+        return sum + (RARITY_APPEARANCE_WEIGHT[ch.rarity] || RARITY_APPEARANCE_WEIGHT.common);
+      }, 0);
+      const numChallenges = Math.max(CHARACTER_POOL.length, 50);
+      const challenges = [];
+      for (let i = 0; i < numChallenges; i++) {
+        let r = Math.random() * totalWeight;
+        let poolIdx = 0;
+        for (let j = 0; j < CHARACTER_POOL.length; j++) {
+          const w = RARITY_APPEARANCE_WEIGHT[CHARACTER_POOL[j].rarity] || RARITY_APPEARANCE_WEIGHT.common;
+          if (r <= w) { poolIdx = j; break; }
+          r -= w;
+        }
+        challenges.push({
+          skill: skills[i % skills.length],
+          difficulty: currentDifficulty,
+          character: CHARACTER_POOL[poolIdx],
+          characterPoolIndex: poolIdx
+        });
+      }
+      return challenges;
+    }
+    let challenges = buildChallenges();
+
+    function getAlbumKey() {
+      return STORAGE_KEY + '-' + (currentProfile && currentProfile.studentId || 'anon');
+    }
+    function getCollected() {
+      if (!currentProfile) return [];
+      try {
+        const key = getAlbumKey();
+        const raw = localStorage.getItem(key);
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        if (!Array.isArray(arr)) return [];
+        return arr.filter((n) => typeof n === 'number' && n >= 0 && n < CHARACTER_POOL.length);
+      } catch (_) { return []; }
+    }
+
+    function setCollected(indices) {
+      localStorage.setItem(getAlbumKey(), JSON.stringify(indices));
+    }
+
+    function addCollected(index) {
+      const c = getCollected();
+      c.push(index);
+      setCollected(c);
+    }
+
+    let currentChallengeIndex = 0;
+    let xrSession = null;
+    let cameraStarted = false;
+    let handLandmarker = null;
+    let faceDetector = null;
+    let lastVideoTime = -1;
+    let lastFaceVideoTime = -1;
+    let fingerHoverButton = null;
+    let fingerHoverStart = 0;
+    let handTrackingRaf = 0;
+    let arRenderer = null;
+    let arScene = null;
+    let arCamera = null;
+    let danceCharacterGroup = null;
+    let danceStartTime = 0;
+    let danceAnimationFrame = 0;
+    let cameraModeDanceRenderer = null;
+    let balls = 0;
+    let correctStreak = 0;
+    let pityCount = 0;
+    let currentCharacterForCapture = null;
+    let questionStartTime = null;
+    let attemptCountCurrentQuestion = 0;
+    let soundEnabled = true;
+    let catchMode = (function () {
+      try { return localStorage.getItem('gobeyond-catch-mode') || 'explore'; } catch (_) { return 'explore'; }
+    })();
+
+    const startScreen = document.getElementById('start-screen');
+    const identityScreen = document.getElementById('identity-screen');
+    const ballCounter = document.getElementById('ball-counter');
+    const ballCountEl = document.getElementById('ball-count');
+    const characterBubble = document.getElementById('character-bubble');
+    const bubbleName = document.getElementById('bubble-name');
+    const bubbleDesc = document.getElementById('bubble-desc');
+    const bubbleBlurb = document.getElementById('bubble-blurb');
+    const throwBallBtn = document.getElementById('throw-ball-btn');
+    const btnSkipCapture = document.getElementById('btn-skip-capture');
+    const ballFlyEl = document.getElementById('ball-fly-el');
+    const captureFeedback = document.getElementById('capture-feedback');
+    const teacherDashboard = document.getElementById('teacher-dashboard');
+    const soundToggle = document.getElementById('sound-toggle');
+    const catchModeToggle = document.getElementById('catch-mode-toggle');
+    const arOverlay = document.getElementById('ar-overlay');
+    const cameraVideo = document.getElementById('camera-video');
+    const xrCanvas = document.getElementById('xr-canvas');
+    const threeCanvas = document.getElementById('three-canvas');
+    const fingerCursor = document.getElementById('finger-cursor');
+    const danceScreen = document.getElementById('dance-screen');
+    const btnAlbum = document.getElementById('btn-album');
+    const btnBackMenu = document.getElementById('btn-back-menu');
+    const profileBadge = document.getElementById('profile-badge');
+    const linkTeacherDashboard = document.getElementById('link-teacher-dashboard');
+    const quizScreen = document.getElementById('quiz-screen');
+    const successScreen = document.getElementById('success-screen');
+    const addedScreen = document.getElementById('added-screen');
+    const doneScreen = document.getElementById('done-screen');
+    const quizTitle = document.getElementById('quiz-title');
+    const quizSubtitle = document.getElementById('quiz-subtitle');
+    const spellingUnderlinesEl = document.getElementById('spelling-underlines');
+    const spellingPictureFrame = document.getElementById('spelling-picture-frame');
+    const spellingPictureImg = document.getElementById('spelling-picture-img');
+    const foundAnswersArea = document.getElementById('found-answers-area');
+    const foundCurrentSquare = document.getElementById('found-current-square');
+    const foundCurrentContent = document.getElementById('found-current-content');
+    const foundCurrentProgress = document.getElementById('found-current-progress');
+    const foundCounter = document.getElementById('found-counter');
+    const foundCollectedRow = document.getElementById('found-collected-row');
+    const answersContainer = document.getElementById('answers-container');
+    const btnQuestionType = document.getElementById('btn-question-type');
+    const characterCard = document.getElementById('character-card');
+    const addedName = document.getElementById('added-name');
+    const btnNextAfterAdd = document.getElementById('btn-next-after-add');
+    const btnOpenAlbumFinal = document.getElementById('btn-open-album-final');
+    const albumPanel = document.getElementById('album-panel');
+    const albumClose = document.getElementById('album-close');
+    const albumReset = document.getElementById('album-reset');
+    const albumGrid = document.getElementById('album-grid');
+    const characterOnHeadWrap = document.getElementById('character-on-head-wrap');
+    const characterOnHeadCanvas = document.getElementById('character-on-head-canvas');
+
+    function showScreen(screen) {
+      document.querySelectorAll('#ar-overlay .screen').forEach(s => s.classList.remove('active'));
+      if (screen) screen.classList.add('active');
+    }
+
+    function getBalls() {
+      if (!currentProfile) return 0;
+      const key = 'gobeyond-balls-' + currentProfile.studentId;
+      const v = localStorage.getItem(key);
+      return v != null ? parseInt(v, 10) : 0;
+    }
+    function setBalls(n) {
+      balls = Math.max(0, n);
+      if (currentProfile) localStorage.setItem('gobeyond-balls-' + currentProfile.studentId, String(balls));
+      if (ballCountEl) ballCountEl.textContent = balls;
+      if (ballCounter) ballCounter.classList.toggle('visible', balls >= 0 && arOverlay.style.display === 'flex');
+    }
+
+    function getPity() {
+      if (!currentProfile) return 0;
+      const key = 'gobeyond-pity-' + currentProfile.studentId;
+      const v = localStorage.getItem(key);
+      return v != null ? parseInt(v, 10) : 0;
+    }
+    function setPity(n) {
+      pityCount = Math.min(PITY_CAP, Math.max(0, n));
+      if (currentProfile) localStorage.setItem('gobeyond-pity-' + currentProfile.studentId, String(pityCount));
+    }
+
+    function captureChance(rarity, qualityTier, pity) {
+      const base = RARITY_BASE_CHANCE[rarity] || 0.5;
+      const mult = THROW_QUALITY_MULT[qualityTier] ?? 1;
+      const pityBonus = pity * PITY_BONUS_PER_FAIL;
+      return Math.min(0.99, base * mult + pityBonus);
+    }
+
+    let audioCtx = null;
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function playTone(freq, duration, type) {
+      if (!soundEnabled) return;
+      try {
+        const ctx = getAudioCtx();
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = type || 'sine';
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration);
+      } catch (_) {}
+    }
+    function playSound(event) {
+      if (!soundEnabled) return;
+      try {
+        const ctx = getAudioCtx();
+        if (ctx.state === 'suspended') ctx.resume();
+        const now = ctx.currentTime;
+        if (event === 'correct') {
+          playTone(523, 0.12, 'sine');
+          setTimeout(() => playTone(659, 0.15, 'sine'), 80);
+          setTimeout(() => playTone(784, 0.2, 'sine'), 200);
+        } else if (event === 'wrong') {
+          playTone(200, 0.25, 'sawtooth');
+          setTimeout(() => playTone(160, 0.2, 'sawtooth'), 120);
+        } else if (event === 'throw_success') {
+          playTone(880, 0.08, 'sine');
+          setTimeout(() => playTone(1108, 0.12, 'sine'), 60);
+          setTimeout(() => playTone(1318, 0.2, 'sine'), 140);
+        } else if (event === 'throw_miss') {
+          playTone(180, 0.2, 'triangle');
+        } else if (event === 'album_complete') {
+          playTone(523, 0.15, 'sine');
+          setTimeout(() => playTone(659, 0.15, 'sine'), 120);
+          setTimeout(() => playTone(784, 0.15, 'sine'), 240);
+          setTimeout(() => playTone(1046, 0.4, 'sine'), 360);
+        }
+      } catch (_) {}
+    }
+
+    function triggerJuice(type) {
+      if (type === 'shake') document.body.classList.add('screen-shake');
+      if (type === 'burst') document.body.classList.add('success-burst');
+      if (window.navigator && navigator.vibrate) navigator.vibrate(type === 'success' ? [50, 30, 50] : [30]);
+      setTimeout(() => {
+        document.body.classList.remove('screen-shake', 'success-burst');
+      }, 500);
+    }
+
+    function createHallOfFameFrame(ch, i, collectedArr) {
+      const count = collectedArr.filter(function (idx) { return idx === i; }).length;
+      const collected = count > 0;
+      const frame = document.createElement('div');
+      frame.className = 'hall-of-fame-frame';
+      frame.setAttribute('data-pool-index', String(i));
+      const inner = document.createElement('div');
+      inner.className = 'hall-of-fame-frame-inner';
+      if (collected) {
+        if (ch.portrait) {
+          const img = document.createElement('img');
+          img.src = ch.portrait;
+          img.alt = ch.name || '';
+          img.onerror = function () {
+            const span = document.createElement('span');
+            span.className = 'frame-emoji';
+            span.textContent = ch.emoji || '?';
+            if (inner.contains(img)) { inner.removeChild(img); inner.appendChild(span); }
+          };
+          inner.appendChild(img);
+        } else {
+          const span = document.createElement('span');
+          span.className = 'frame-emoji';
+          span.textContent = ch.emoji || '?';
+          inner.appendChild(span);
+        }
+      } else {
+        const span = document.createElement('span');
+        span.className = 'frame-emoji';
+        span.textContent = '?';
+        inner.appendChild(span);
+      }
+      frame.appendChild(inner);
+      const labelSlot = document.createElement('div');
+      labelSlot.className = 'hall-of-fame-frame-label-slot';
+      const rarityLabel = RARITY_LABELS[ch.rarity] || RARITY_LABELS.common;
+      const rarityBadge = document.createElement('span');
+      rarityBadge.className = 'rarity-badge rarity-' + (ch.rarity || 'common');
+      rarityBadge.textContent = rarityLabel;
+      labelSlot.appendChild(rarityBadge);
+      const nameEl = document.createElement('div');
+      nameEl.className = 'hall-of-fame-frame-name';
+      nameEl.textContent = ch.name || '—';
+      labelSlot.appendChild(nameEl);
+      const countEl = document.createElement('div');
+      countEl.className = 'hall-of-fame-frame-count';
+      countEl.textContent = count > 0 ? '×' + count : '0';
+      labelSlot.appendChild(countEl);
+      frame.appendChild(labelSlot);
+      return frame;
+    }
+    function renderHallOfFameFrames() {
+      const leftPanel = document.getElementById('hall-of-fame-left');
+      const rightPanel = document.getElementById('hall-of-fame-right');
+      if (!leftPanel || !rightPanel) return;
+      leftPanel.innerHTML = '';
+      rightPanel.innerHTML = '';
+      const collectedArr = getCollected();
+      const half = Math.ceil(CHARACTER_POOL.length / 2);
+      [leftPanel, rightPanel].forEach(function (panel, side) {
+        const start = side === 0 ? 0 : half;
+        const end = side === 0 ? half : CHARACTER_POOL.length;
+        const gallery = document.createElement('div');
+        gallery.className = 'hall-of-fame-gallery';
+        for (let i = start; i < end; i++) {
+          const ch = CHARACTER_POOL[i];
+          gallery.appendChild(createHallOfFameFrame(ch, i, collectedArr));
+        }
+        panel.appendChild(gallery);
+      });
+      if (lastScrolledToCharacterIndex !== null) {
+        var idx = lastScrolledToCharacterIndex;
+        requestAnimationFrame(function () { scrollHallOfFameToCharacter(idx, true); });
+      }
+    }
+
+    var explorationCleanup = null;
+    var explorationCenterBeta = null;
+    var explorationCenterGamma = null;
+    var explorationMovementFactor = 1;
+    var explorationCurrentSpace = null;
+    var explorationLastOffsetX = 0;
+    var explorationLastOffsetY = 0;
+    var explorationSmoothAccZ = 0;
+    var EXPLORATION_SENSITIVITY = 1.8;
+    var EXPLORATION_CLAMP = 120;
+
+    function createAnswerContent(value, isSpelling) {
+      if (isSpelling || (typeof value === 'string' && value.length === 1 && !/^\d$/.test(value))) {
+        var span = document.createElement('span');
+        span.textContent = typeof value === 'string' ? value.toUpperCase() : value;
+        return span;
+      }
+      var wrap = document.createElement('span');
+      wrap.className = 'answer-digits';
+      var num = Number(value);
+      if (num !== num) num = 0;
+      var str = String(Math.floor(num));
+      for (var i = 0; i < str.length; i++) {
+        var d = str.charAt(i);
+        var img = document.createElement('img');
+        img.src = 'Gifs/' + d + '.gif';
+        img.alt = '';
+        img.className = 'answer-digit-gif';
+        img.setAttribute('data-digit', d);
+        wrap.appendChild(img);
+      }
+      return wrap;
+    }
+
+    function randomHideAndSeekPositions(count, reservedTopPct) {
+      var margin = 8;
+      var rangeX = 100 - 2 * margin;
+      var yMin = reservedTopPct != null ? Math.min(100 - margin, Math.max(margin, reservedTopPct)) : margin;
+      var rangeY = 100 - margin - yMin;
+      var minDist = 24;
+      var positions = [];
+      for (var n = 0; n < count; n++) {
+        var tries = 0;
+        var xPct, yPct;
+        do {
+          xPct = margin + Math.random() * rangeX;
+          yPct = yMin + Math.random() * rangeY;
+          var ok = true;
+          for (var j = 0; j < positions.length; j++) {
+            var dx = positions[j].x - xPct;
+            var dy = positions[j].y - yPct;
+            if (Math.sqrt(dx * dx + dy * dy) < minDist) { ok = false; break; }
+          }
+          if (ok) break;
+          tries++;
+        } while (tries < 80);
+        positions.push({ x: xPct, y: yPct });
+      }
+      return positions;
+    }
+
+    function updateExplorationProximityScale(space, offsetX, offsetY) {
+      if (!space) return;
+      var viewCenterX = 50 - (offsetX || 0);
+      var viewCenterY = 50 - (offsetY !== undefined ? offsetY : 0);
+      var btns = space.querySelectorAll('.answer-btn');
+      for (var i = 0; i < btns.length; i++) {
+        var btn = btns[i];
+        var px = parseFloat(btn.getAttribute('data-x')) || 50;
+        var py = parseFloat(btn.getAttribute('data-y')) || 50;
+        var dx = px - viewCenterX;
+        var dy = py - viewCenterY;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        var baseScale = Math.max(0.6, Math.min(1.4, 1.4 - dist / 45));
+        var scale = baseScale * Math.max(0.7, Math.min(5, explorationMovementFactor));
+        btn.style.setProperty('--proximity-scale', String(scale));
+      }
+    }
+
+    function setExplorationTransform(space, offsetX, offsetY) {
+      if (!space) return;
+      /* 500% space: show ~20% window so center has 1–2 numbers, tilt/drag to find the rest */
+      var base = -40;
+      var x = base + offsetX;
+      var y = base + (offsetY !== undefined ? offsetY : 0);
+      space.style.transform = 'translate(' + x + '%, ' + y + '%)';
+      updateExplorationProximityScale(space, offsetX, offsetY);
+    }
+
+    function startExplorationTracking(space, onUpdate) {
+      if (explorationCleanup) { explorationCleanup(); explorationCleanup = null; }
+      explorationCurrentSpace = space;
+      explorationLastOffsetX = 0;
+      explorationLastOffsetY = 0;
+      explorationMovementFactor = 1;
+      explorationSmoothAccZ = 0;
+      var rafId = null;
+      var lastOx = 0, lastOy = 0;
+
+      function applyOffset(ox, oy) {
+        var clamp = EXPLORATION_CLAMP;
+        ox = Math.max(-clamp, Math.min(clamp, ox));
+        oy = Math.max(-clamp, Math.min(clamp, oy));
+        if (ox !== lastOx || oy !== lastOy) { lastOx = ox; lastOy = oy; explorationLastOffsetX = ox; explorationLastOffsetY = oy; onUpdate(ox, oy); }
+      }
+
+      function onOrientation(e) {
+        if (e.gamma == null) return;
+        if (explorationCenterGamma == null) explorationCenterGamma = e.gamma;
+        if (explorationCenterBeta == null && e.beta != null) explorationCenterBeta = e.beta;
+        var sens = EXPLORATION_SENSITIVITY;
+        var ox = (e.gamma - explorationCenterGamma) * sens;
+        var oy = (e.beta != null && explorationCenterBeta != null) ? (e.beta - explorationCenterBeta) * sens : 0;
+        applyOffset(ox, oy);
+      }
+
+      function onMotion(e) {
+        if (e.acceleration == null || e.acceleration.z == null) return;
+        var accZ = e.acceleration.z;
+        explorationSmoothAccZ = explorationSmoothAccZ * 0.85 + accZ * 0.15;
+        var delta = -explorationSmoothAccZ * 0.04;
+        explorationMovementFactor = Math.max(0.7, Math.min(5, explorationMovementFactor + delta));
+        if (explorationCurrentSpace && explorationCurrentSpace.parentNode) {
+          updateExplorationProximityScale(explorationCurrentSpace, explorationLastOffsetX, explorationLastOffsetY);
+        }
+      }
+
+      function tick() {
+        rafId = requestAnimationFrame(tick);
+      }
+
+      if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+        DeviceOrientationEvent.requestPermission().then(function (permission) {
+          if (permission !== 'granted') return;
+          explorationCenterBeta = null;
+          explorationCenterGamma = null;
+          window.addEventListener('deviceorientation', onOrientation);
+          rafId = requestAnimationFrame(tick);
+          if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission) {
+            DeviceMotionEvent.requestPermission().then(function (motionPerm) {
+              if (motionPerm === 'granted') window.addEventListener('devicemotion', onMotion);
+            }).catch(function () {});
+          } else if (typeof DeviceMotionEvent !== 'undefined') {
+            window.addEventListener('devicemotion', onMotion);
+          }
+        }).catch(function () {});
+      } else if (typeof DeviceOrientationEvent !== 'undefined') {
+        window.addEventListener('deviceorientation', onOrientation);
+        rafId = requestAnimationFrame(tick);
+        if (typeof DeviceMotionEvent !== 'undefined') {
+          window.addEventListener('devicemotion', onMotion);
+        }
+      }
+
+      var dragStartX = 0, dragStartY = 0, dragStartOx = 0, dragStartOy = 0, dragging = false;
+      function onPointerDown(e) {
+        if (!space || !space.parentElement) return;
+        dragging = true;
+        dragStartX = e.clientX != null ? e.clientX : e.touches[0].clientX;
+        dragStartY = e.clientY != null ? e.clientY : e.touches[0].clientY;
+        dragStartOx = lastOx;
+        dragStartOy = lastOy;
+      }
+      function onPointerMove(e) {
+        if (!dragging) return;
+        var x = e.clientX != null ? e.clientX : e.touches[0].clientX;
+        var y = e.clientY != null ? e.clientY : e.touches[0].clientY;
+        var dx = (x - dragStartX) * 0.25;
+        var dy = (y - dragStartY) * 0.25;
+        applyOffset(dragStartOx + dx, dragStartOy + dy);
+      }
+      function onPointerUp() { dragging = false; }
+      var container = answersContainer;
+      container.addEventListener('mousedown', onPointerDown);
+      container.addEventListener('touchstart', onPointerDown, { passive: true });
+      window.addEventListener('mousemove', onPointerMove);
+      window.addEventListener('touchmove', onPointerMove, { passive: true });
+      window.addEventListener('mouseup', onPointerUp);
+      window.addEventListener('touchend', onPointerUp);
+
+      explorationCleanup = function () {
+        explorationCurrentSpace = null;
+        window.removeEventListener('deviceorientation', onOrientation);
+        window.removeEventListener('devicemotion', onMotion);
+        if (rafId != null) cancelAnimationFrame(rafId);
+        container.removeEventListener('mousedown', onPointerDown);
+        container.removeEventListener('touchstart', onPointerDown);
+        window.removeEventListener('mousemove', onPointerMove);
+        window.removeEventListener('touchmove', onPointerMove);
+        window.removeEventListener('mouseup', onPointerUp);
+        window.removeEventListener('touchend', onPointerUp);
+      };
+    }
+
+    function renderCenteredAnswers(sorted) {
+      const containerRect = answersContainer.getBoundingClientRect();
+      const w = containerRect.width;
+      const h = containerRect.height;
+      const subtitleRect = quizSubtitle ? quizSubtitle.getBoundingClientRect() : null;
+      const safeTop = subtitleRect ? (subtitleRect.bottom - containerRect.top + 20) : 40;
+      const isSpelling = currentGeneratedQuestion && currentGeneratedQuestion.skill === 'Spelling';
+      const extraTop = isSpelling ? 72 : 0;
+      const minY = Math.max(24, Math.min(h - 140, safeTop + extraTop));
+      const maxY = Math.max(minY + 160, h - 40);
+      const midY = (minY + maxY) / 2;
+      const pad = 70;
+      const quadrants = [
+        { xMin: 5, xMax: 45, yMin: minY, yMax: midY - pad },
+        { xMin: 55, xMax: 95, yMin: minY, yMax: midY - pad },
+        { xMin: 5, xMax: 45, yMin: midY + pad, yMax: maxY },
+        { xMin: 55, xMax: 95, yMin: midY + pad, yMax: maxY }
+      ];
+
+      sorted.forEach(function (value, i) {
+        const q = quadrants[i] || quadrants[0];
+        const xPct = q.xMin + Math.random() * (q.xMax - q.xMin);
+        const yPx = q.yMin + Math.random() * (q.yMax - q.yMin);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'answer-btn' + (isSpelling ? ' answer-btn-letter' : '');
+        btn.dataset.value = value;
+        btn.style.left = xPct + '%';
+        btn.style.top = yPx + 'px';
+        btn.style.animationDuration = (8 + Math.random() * 4) + 's';
+
+        const label = document.createElement('span');
+        label.textContent = isSpelling ? String(value).toUpperCase() : value;
+        btn.appendChild(label);
+        const progressWrap = document.createElement('div');
+        progressWrap.className = 'finger-progress-wrap';
+        const progressFill = document.createElement('div');
+        progressFill.className = 'finger-progress-fill';
+        const progressLabel = document.createElement('span');
+        progressLabel.className = 'finger-progress-label';
+        progressWrap.appendChild(progressFill);
+        progressWrap.appendChild(progressLabel);
+        btn.appendChild(progressWrap);
+        progressLabel.style.visibility = 'hidden';
+        progressFill.style.display = 'none';
+        if (isSpelling) btn.addEventListener('click', function () { onSpellingLetter(value); });
+        else btn.addEventListener('click', function () { onAnswer(value); });
+        answersContainer.appendChild(btn);
+      });
+    }
+
+    function renderAnswersOnly() {
+      if (!currentGeneratedQuestion) return;
+      if (explorationCleanup) { explorationCleanup(); explorationCleanup = null; }
+      stopExplorationCollectInterval();
+      explorationCollectSpace = null;
+      setFoundAnswersUIVisible(false);
+      resetFoundAnswersUI();
+      if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+      answersContainer.innerHTML = '';
+      const q = currentGeneratedQuestion;
+      const sorted = [...q.answers].sort((a, b) => Math.random() - 0.5);
+      if (catchMode === 'center') {
+        setFoundAnswersUIVisible(false);
+        resetFoundAnswersUI();
+        if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+        renderCenteredAnswers(sorted);
+      } else {
+        var explorationSpace = document.createElement('div');
+        explorationSpace.className = 'answers-exploration-space';
+        explorationSpace.setAttribute('aria-hidden', 'true');
+        answersContainer.appendChild(explorationSpace);
+        var explorationOffsetX = 0;
+        var explorationOffsetY = 0;
+        setExplorationTransform(explorationSpace, explorationOffsetX, explorationOffsetY);
+        var positions = randomHideAndSeekPositions(sorted.length, q.skill === 'Spelling' ? 42 : undefined);
+        sorted.forEach(function (value, i) {
+          var pos = positions[i];
+          var xPct = pos.x;
+          var yPct = pos.y;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'answer-btn' + (q.skill === 'Spelling' ? ' answer-btn-letter' : '');
+        btn.dataset.value = value;
+        btn.setAttribute('data-answer-idx', String(i));
+        btn.setAttribute('data-x', String(xPct));
+        btn.setAttribute('data-y', String(yPct));
+        btn.style.left = xPct + '%';
+        btn.style.top = yPct + '%';
+        var inner = document.createElement('span');
+        inner.className = 'answer-btn-inner';
+        inner.style.animationDuration = (6 + Math.random() * 6) + 's';
+        inner.style.animationDelay = (Math.random() * 2) + 's';
+        var label = createAnswerContent(value, q.skill === 'Spelling');
+          inner.appendChild(label);
+          var progressWrap = document.createElement('div');
+          progressWrap.className = 'finger-progress-wrap';
+          var progressFill = document.createElement('div');
+          progressFill.className = 'finger-progress-fill';
+          var progressLabel = document.createElement('span');
+          progressLabel.className = 'finger-progress-label';
+          progressWrap.appendChild(progressFill);
+          progressWrap.appendChild(progressLabel);
+          inner.appendChild(progressWrap);
+          btn.appendChild(inner);
+          progressLabel.style.visibility = 'hidden';
+          progressFill.style.display = 'none';
+          if (q.skill === 'Spelling') {
+            btn.addEventListener('click', function () { onSpellingLetter(value); });
+          } else {
+            btn.addEventListener('click', function () {});
+          }
+          explorationSpace.appendChild(btn);
+        });
+        updateExplorationProximityScale(explorationSpace, explorationOffsetX, explorationOffsetY);
+        startExplorationTracking(explorationSpace, function (dx, dy) {
+          explorationOffsetX = dx;
+          explorationOffsetY = dy != null ? dy : 0;
+          setExplorationTransform(explorationSpace, explorationOffsetX, explorationOffsetY);
+        });
+        if (q.skill !== 'Spelling') {
+          beginExplorationMathCollectMode(explorationSpace, sorted);
+          const prevCleanup = explorationCleanup;
+          explorationCleanup = function () {
+            stopExplorationCollectInterval();
+            explorationCollectSpace = null;
+            setFoundAnswersUIVisible(false);
+            resetFoundAnswersUI();
+            if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+            if (prevCleanup) prevCleanup();
+          };
+        }
+      }
+      fingerHoverButton = null;
+      answersContainer.querySelectorAll('.answer-btn').forEach(b => {
+        b.classList.remove('finger-hover');
+        var fill = b.querySelector('.finger-progress-fill');
+        var lbl = b.querySelector('.finger-progress-label');
+        if (fill) { fill.style.width = '0%'; fill.style.display = 'none'; }
+        if (lbl) { lbl.textContent = ''; lbl.style.visibility = 'hidden'; }
+      });
+    }
+
+    let spellingTyped = '';
+
+    function updateSpellingUnderlines() {
+      if (!spellingUnderlinesEl || !currentGeneratedQuestion || currentGeneratedQuestion.skill !== 'Spelling') return;
+      const word = currentGeneratedQuestion.word;
+      spellingUnderlinesEl.innerHTML = '';
+      for (var i = 0; i < word.length; i++) {
+        var span = document.createElement('span');
+        if (i < spellingTyped.length) {
+          span.textContent = spellingTyped[i].toUpperCase();
+          span.className = '';
+        } else {
+          span.textContent = '_';
+          span.className = 'underscore';
+        }
+        spellingUnderlinesEl.appendChild(span);
+      }
+    }
+
+    function goToCorrectAnswerFlow() {
+      const c = challenges[currentChallengeIndex];
+      playSound('correct');
+      const timeSpent = Math.round((Date.now() - questionStartTime) / 1000);
+      if (currentProfile && sessionId) {
+        pushEvent({ event: 'question_complete', studentId: currentProfile.studentId, nickname: currentProfile.nickname, classCode: currentProfile.classCode, sessionId, skill: c.skill, difficulty: currentDifficulty, timeSpent, attempts: attemptCountCurrentQuestion + 1 });
+      }
+      if (correctStreak >= 2 && currentDifficulty < 10) { currentDifficulty++; if (currentProfile) pushEvent({ event: 'difficulty_change', studentId: currentProfile.studentId, sessionId, newDifficulty: currentDifficulty, reason: 'streak' }); }
+      correctStreak++;
+      var earned = BALLS_PER_CORRECT;
+      if (STREAK_BONUS_BALLS[correctStreak] != null) earned += STREAK_BONUS_BALLS[correctStreak];
+      setBalls(getBalls() + earned);
+      if (currentProfile) pushEvent({ event: 'balls_earned', studentId: currentProfile.studentId, sessionId, amount: earned, reason: correctStreak >= 2 ? 'streak' : 'correct' });
+      var char = c.character;
+      characterCard.innerHTML = '<div class="character-avatar">' + char.emoji + '</div><p class="character-name">' + char.name + '</p><p class="character-desc">' + char.desc + '</p>';
+      var poolIdx = c.characterPoolIndex;
+      currentCharacterForCapture = { ...char, challengeIndex: currentChallengeIndex, characterPoolIndex: poolIdx };
+      showScreen(danceScreen);
+      startDanceMode();
+      setTimeout(function () {
+        if (currentCharacterForCapture && !captureOverlayShown) showCaptureOverlay();
+      }, 400);
+    }
+
+    function onSpellingLetter(letter) {
+      var q = currentGeneratedQuestion;
+      if (!q || q.skill !== 'Spelling') return;
+      var word = q.word;
+      var nextIndex = spellingTyped.length;
+      if (letter !== word[nextIndex]) {
+        playSound('wrong');
+        attemptCountCurrentQuestion++;
+        spellingTyped = '';
+        updateSpellingUnderlines();
+        return;
+      }
+      spellingTyped += letter;
+      updateSpellingUnderlines();
+      if (spellingTyped === word) {
+        goToCorrectAnswerFlow();
+      }
+    }
+
+    /* Exploration (math): collect all answers before choosing */
+    var explorationCollectInterval = null;
+    var explorationCollectSpace = null;
+    var explorationCollectActiveBtn = null;
+    var explorationCollectActiveStart = 0;
+    var explorationCollectCollectedIdx = new Set();
+    var explorationCollectTotal = 0;
+    var explorationCollectSorted = [];
+    var EXPLORATION_COLLECT_MS = 3000;
+    var EXPLORATION_SEE_THRESHOLD = 18;
+
+    function setFoundAnswersUIVisible(visible) {
+      if (!foundAnswersArea) return;
+      foundAnswersArea.classList.toggle('visible', !!visible);
+      foundAnswersArea.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    }
+    function resetFoundAnswersUI() {
+      if (foundCurrentSquare) foundCurrentSquare.classList.add('hidden');
+      if (foundCurrentContent) foundCurrentContent.innerHTML = '';
+      if (foundCurrentProgress) foundCurrentProgress.style.width = '0%';
+      if (foundCounter) foundCounter.textContent = 'Found 0/0';
+      if (foundCollectedRow) foundCollectedRow.innerHTML = '';
+    }
+    function updateFoundCounter() {
+      if (!foundCounter) return;
+      foundCounter.textContent = 'Found ' + explorationCollectCollectedIdx.size + '/' + explorationCollectTotal;
+    }
+    function showCurrentFound(value) {
+      if (!foundCurrentSquare || !foundCurrentContent) return;
+      foundCurrentContent.innerHTML = '';
+      foundCurrentContent.appendChild(createAnswerContent(value, false));
+      foundCurrentSquare.classList.remove('hidden');
+    }
+    function hideCurrentFound() {
+      if (foundCurrentSquare) foundCurrentSquare.classList.add('hidden');
+      if (foundCurrentContent) foundCurrentContent.innerHTML = '';
+      if (foundCurrentProgress) foundCurrentProgress.style.width = '0%';
+    }
+    function stopExplorationCollectInterval() {
+      if (explorationCollectInterval) { clearInterval(explorationCollectInterval); explorationCollectInterval = null; }
+    }
+    function finishExplorationCollect() {
+      stopExplorationCollectInterval();
+      explorationCollectActiveBtn = null;
+      explorationCollectActiveStart = 0;
+      hideCurrentFound();
+      if (quizSubtitle) quizSubtitle.textContent = 'Choose the correct answer';
+      if (foundCollectedRow) {
+        foundCollectedRow.innerHTML = '';
+        var values = explorationCollectSorted.slice().sort(function (a, b) { return Number(a) - Number(b); });
+        values.forEach(function (value) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'found-choice-btn';
+          btn.appendChild(createAnswerContent(value, false));
+          btn.addEventListener('click', function () { onAnswer(value, btn); });
+          foundCollectedRow.appendChild(btn);
+        });
+      }
+      if (explorationCollectSpace) {
+        explorationCollectSpace.style.display = 'none';
+      }
+      if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+    }
+    function explorationCollectTick() {
+      if (!explorationCollectSpace || !explorationCollectSorted || explorationCollectSorted.length === 0) return;
+      if (explorationCollectCollectedIdx.size >= explorationCollectTotal) return;
+
+      var btns = explorationCollectSpace.querySelectorAll('.answer-btn');
+      var best = null;
+      var bestDist = Infinity;
+      for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        var idx = b.getAttribute('data-answer-idx');
+        if (idx != null && explorationCollectCollectedIdx.has(idx)) continue;
+        var rect = b.getBoundingClientRect();
+        var winW = window.innerWidth || document.documentElement.clientWidth || 0;
+        var winH = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (!winW || !winH) continue;
+        var sideW = winW * 0.22; /* Hall of Fame panels ≈22% width each side */
+        var centerLeft = sideW;
+        var centerRight = winW - sideW;
+        var visibleHoriz = rect.left >= centerLeft && rect.right <= centerRight;
+        var visibleVert = rect.top >= 0 && rect.bottom <= winH;
+        /* Only count when the answer is actually visible on screen, between the two Hall of Fame sides. */
+        if (!visibleHoriz || !visibleVert) continue;
+        var cx = rect.left + rect.width / 2;
+        var cy = rect.top + rect.height / 2;
+        var dx = cx - winW / 2;
+        var dy = cy - winH / 2;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < bestDist) { bestDist = dist; best = b; }
+      }
+
+      if (!best) {
+        explorationCollectActiveBtn = null;
+        explorationCollectActiveStart = 0;
+        hideCurrentFound();
+        return;
+      }
+
+      if (best !== explorationCollectActiveBtn) {
+        explorationCollectActiveBtn = best;
+        explorationCollectActiveStart = Date.now();
+        var v = best.getAttribute('data-value');
+        showCurrentFound(v != null ? Number(v) : 0);
+        if (foundCurrentProgress) foundCurrentProgress.style.width = '0%';
+      }
+
+      var elapsed = Date.now() - explorationCollectActiveStart;
+      var pct = Math.max(0, Math.min(1, elapsed / EXPLORATION_COLLECT_MS));
+      if (foundCurrentProgress) foundCurrentProgress.style.width = Math.round(pct * 100) + '%';
+
+      if (elapsed >= EXPLORATION_COLLECT_MS) {
+        var idx2 = best.getAttribute('data-answer-idx');
+        if (idx2 != null) explorationCollectCollectedIdx.add(idx2);
+        best.classList.add('collected');
+        best.style.opacity = '0.18';
+        updateFoundCounter();
+        explorationCollectActiveBtn = null;
+        explorationCollectActiveStart = 0;
+        hideCurrentFound();
+        if (explorationCollectCollectedIdx.size >= explorationCollectTotal) {
+          finishExplorationCollect();
+        }
+      }
+    }
+    function beginExplorationMathCollectMode(space, sorted) {
+      explorationCollectSpace = space;
+      explorationCollectSorted = sorted.slice();
+      explorationCollectTotal = sorted.length;
+      explorationCollectCollectedIdx = new Set();
+      explorationCollectActiveBtn = null;
+      explorationCollectActiveStart = 0;
+      resetFoundAnswersUI();
+      setFoundAnswersUIVisible(true);
+      updateFoundCounter();
+      if (quizSubtitle) quizSubtitle.textContent = 'Find all answers first';
+      if (quizScreen) quizScreen.classList.add('collect-find-mode');
+      stopExplorationCollectInterval();
+      explorationCollectInterval = setInterval(explorationCollectTick, 50);
+    }
+
+    function renderQuiz() {
+      if (explorationCleanup) { explorationCleanup(); explorationCleanup = null; }
+      stopExplorationCollectInterval();
+      explorationCollectSpace = null;
+      setFoundAnswersUIVisible(false);
+      resetFoundAnswersUI();
+      if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+      renderHallOfFameFrames();
+      questionStartTime = Date.now();
+      attemptCountCurrentQuestion = 0;
+      spellingTyped = '';
+      const c = challenges[currentChallengeIndex];
+      const skill = c.skill || MATH_SKILLS[currentSkillIndex % MATH_SKILLS.length];
+      currentGeneratedQuestion = (skill === 'Spelling') ? generateSpellingQuestion() : generateQuestion(skill, currentDifficulty);
+      const q = currentGeneratedQuestion;
+      if (q.skill === 'Spelling') {
+        quizTitle.style.display = 'none';
+        if (spellingPictureFrame && spellingPictureImg) {
+          spellingPictureFrame.classList.add('visible');
+          spellingPictureFrame.setAttribute('aria-hidden', 'false');
+          spellingPictureImg.src = q.img || '';
+          spellingPictureImg.alt = 'Word to spell';
+        }
+        if (spellingUnderlinesEl) { spellingUnderlinesEl.classList.add('visible'); spellingUnderlinesEl.setAttribute('aria-hidden', 'false'); updateSpellingUnderlines(); }
+        if (quizSubtitle) quizSubtitle.textContent = 'Explore the room to reveal letters, then spell the word.';
+      } else {
+        quizTitle.style.display = '';
+        quizTitle.textContent = q.question;
+        if (spellingPictureFrame) { spellingPictureFrame.classList.remove('visible'); spellingPictureFrame.setAttribute('aria-hidden', 'true'); }
+        if (spellingPictureImg) spellingPictureImg.removeAttribute('src');
+        if (spellingUnderlinesEl) { spellingUnderlinesEl.classList.remove('visible'); spellingUnderlinesEl.setAttribute('aria-hidden', 'true'); spellingUnderlinesEl.innerHTML = ''; }
+        if (quizSubtitle) quizSubtitle.textContent = 'Explore the room to reveal answers, then choose the correct one';
+      }
+      answersContainer.innerHTML = '';
+
+      const sorted = [...q.answers].sort((a, b) => Math.random() - 0.5);
+      if (catchMode === 'center') {
+        setFoundAnswersUIVisible(false);
+        resetFoundAnswersUI();
+        if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+        renderCenteredAnswers(sorted);
+        fingerHoverButton = null;
+        return;
+      }
+
+      var explorationSpace = document.createElement('div');
+      explorationSpace.className = 'answers-exploration-space';
+      explorationSpace.setAttribute('aria-hidden', 'true');
+      answersContainer.appendChild(explorationSpace);
+
+      var explorationOffsetX = 0;
+      var explorationOffsetY = 0;
+      setExplorationTransform(explorationSpace, explorationOffsetX, explorationOffsetY);
+
+      /* Hide-and-seek: numbers scattered in the room; tilt/drag to find them. Spelling: reserve top so letters don't overlap question. */
+      var positions = randomHideAndSeekPositions(sorted.length, q.skill === 'Spelling' ? 42 : undefined);
+      var isSpelling = (q.skill === 'Spelling');
+      sorted.forEach(function (value, i) {
+        var pos = positions[i];
+        var xPct = pos.x;
+        var yPct = pos.y;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'answer-btn' + (isSpelling ? ' answer-btn-letter' : '');
+        btn.dataset.value = value;
+        btn.setAttribute('data-answer-idx', String(i));
+        btn.setAttribute('data-x', String(xPct));
+        btn.setAttribute('data-y', String(yPct));
+
+        btn.style.left = xPct + '%';
+        btn.style.top = yPct + '%';
+
+        var inner = document.createElement('span');
+        inner.className = 'answer-btn-inner';
+        inner.style.animationDuration = (6 + Math.random() * 6) + 's';
+        inner.style.animationDelay = (Math.random() * 2) + 's';
+        var label = createAnswerContent(value, isSpelling);
+        inner.appendChild(label);
+        var progressWrap = document.createElement('div');
+        progressWrap.className = 'finger-progress-wrap';
+        var progressFill = document.createElement('div');
+        progressFill.className = 'finger-progress-fill';
+        var progressLabel = document.createElement('span');
+        progressLabel.className = 'finger-progress-label';
+        progressWrap.appendChild(progressFill);
+        progressWrap.appendChild(progressLabel);
+        inner.appendChild(progressWrap);
+        btn.appendChild(inner);
+        progressLabel.style.visibility = 'hidden';
+        progressFill.style.display = 'none';
+        if (isSpelling) {
+          btn.addEventListener('click', function () { onSpellingLetter(value); });
+        } else {
+          /* Math exploration: collecting phase (no choosing yet). */
+          btn.addEventListener('click', function () {});
+        }
+        explorationSpace.appendChild(btn);
+      });
+      updateExplorationProximityScale(explorationSpace, explorationOffsetX, explorationOffsetY);
+
+      startExplorationTracking(explorationSpace, function (dx, dy) {
+        explorationOffsetX = dx;
+        explorationOffsetY = dy != null ? dy : 0;
+        setExplorationTransform(explorationSpace, explorationOffsetX, explorationOffsetY);
+      });
+      if (!isSpelling) {
+        beginExplorationMathCollectMode(explorationSpace, sorted);
+        const prevCleanup = explorationCleanup;
+        explorationCleanup = function () {
+          stopExplorationCollectInterval();
+          explorationCollectSpace = null;
+          setFoundAnswersUIVisible(false);
+          resetFoundAnswersUI();
+          if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+          if (prevCleanup) prevCleanup();
+        };
+      }
+      fingerHoverButton = null;
+      answersContainer.querySelectorAll('.answer-btn').forEach(b => {
+        b.classList.remove('finger-hover');
+        const fill = b.querySelector('.finger-progress-fill');
+        const lbl = b.querySelector('.finger-progress-label');
+        if (fill) { fill.style.width = '0%'; fill.style.display = 'none'; }
+        if (lbl) { lbl.textContent = ''; lbl.style.visibility = 'hidden'; }
+      });
+    }
+
+    function onAnswer(value, sourceEl) {
+      const c = challenges[currentChallengeIndex];
+      const q = currentGeneratedQuestion || { correct: 0 };
+      if (value !== q.correct) {
+        playSound('wrong');
+        correctStreak = 0;
+        if (sourceEl && sourceEl.classList) {
+          sourceEl.classList.add('wrong');
+        } else {
+          const btn = [...answersContainer.querySelectorAll('.answer-btn')].find(b => Number(b.dataset.value) === value);
+          if (btn) { btn.classList.add('wrong'); }
+        }
+        setTimeout(() => {
+          currentChallengeIndex++;
+          if (currentChallengeIndex >= challenges.length) {
+            playSound('album_complete');
+            currentChallengeIndex = 0;
+            showScreen(doneScreen);
+          } else {
+            renderQuiz();
+            showScreen(quizScreen);
+          }
+        }, 500);
+        return;
+      }
+      goToCorrectAnswerFlow();
+    }
+
+    characterCard.addEventListener('click', collectCharacter);
+    characterCard.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collectCharacter(); } });
+
+    let captureOverlayShown = false;
+    let captureMissCount = 0;
+    let captureMissLimit = 0;
+    let characterDisappearing = false;
+    let disappearStartTime = 0;
+    let captureBubbleHideTimer = null;
+
+    function goToNextQuestion() {
+      if (captureBubbleHideTimer) { clearTimeout(captureBubbleHideTimer); captureBubbleHideTimer = null; }
+      if (danceAnimationFrame) { cancelAnimationFrame(danceAnimationFrame); danceAnimationFrame = 0; }
+      if (arRenderer && arCamera && danceCharacterGroup && arCamera.children.includes(danceCharacterGroup)) {
+        arCamera.remove(danceCharacterGroup);
+        danceCharacterGroup = null;
+      }
+      if (cameraModeDanceRenderer) {
+        cameraModeDanceRenderer.dispose();
+        cameraModeDanceRenderer = null;
+        danceCharacterGroup = null;
+      }
+      currentCharacterForCapture = null;
+      captureOverlayShown = false;
+      characterDisappearing = false;
+      if (characterBubble) characterBubble.classList.remove('visible');
+      const captureActionsEl = document.getElementById('capture-actions');
+      if (captureActionsEl) captureActionsEl.classList.remove('visible');
+      if (throwBallBtn) throwBallBtn.disabled = false;
+      if (ballFlyEl) ballFlyEl.classList.remove('flying');
+      if (captureFeedback) { captureFeedback.textContent = ''; captureFeedback.className = 'capture-feedback'; captureFeedback.classList.remove('visible', 'caught', 'missed'); }
+      currentChallengeIndex++;
+      if (currentChallengeIndex >= challenges.length) {
+        playSound('album_complete');
+        currentChallengeIndex = 0;
+        showScreen(doneScreen);
+      } else {
+        renderQuiz();
+        showScreen(quizScreen);
+      }
+      setBalls(getBalls());
+    }
+
+    function showCaptureOverlay() {
+      if (!currentCharacterForCapture || captureOverlayShown) return;
+      captureOverlayShown = true;
+      if (danceCharacterGroup && danceCharacterGroup.userData.originalScale != null) {
+        var base = danceCharacterGroup.userData.originalScale;
+        danceCharacterGroup.scale.setScalar(base * 0.6);
+      }
+      captureMissCount = 0;
+      captureMissLimit = 2 + Math.floor(Math.random() * 5);
+      setPity(getPity());
+      const char = currentCharacterForCapture;
+      const blurbText = charBlurb(char);
+      if (bubbleName) bubbleName.textContent = char.name || '';
+      if (bubbleDesc) bubbleDesc.textContent = char.desc || '';
+      if (bubbleBlurb) bubbleBlurb.textContent = blurbText;
+      if (characterBubble) characterBubble.classList.add('visible');
+      if (typeof speechSynthesis !== 'undefined') {
+        const lang = currentLang === 'he' ? 'he-IL' : 'en-US';
+        const nameText = char.name || '';
+        if (nameText) {
+          const nameU = new SpeechSynthesisUtterance(nameText);
+          nameU.rate = 0.9;
+          nameU.lang = lang;
+          nameU.onend = function () {
+            if (blurbText) {
+              const blurbU = new SpeechSynthesisUtterance(blurbText);
+              blurbU.rate = 0.95;
+              blurbU.lang = lang;
+              speechSynthesis.speak(blurbU);
+            }
+          };
+          speechSynthesis.speak(nameU);
+        } else if (blurbText) {
+          const u = new SpeechSynthesisUtterance(blurbText);
+          u.rate = 0.95;
+          u.lang = lang;
+          speechSynthesis.speak(u);
+        }
+      }
+      if (captureBubbleHideTimer) clearTimeout(captureBubbleHideTimer);
+      captureBubbleHideTimer = setTimeout(function () {
+        if (characterBubble) characterBubble.classList.remove('visible');
+        captureBubbleHideTimer = null;
+      }, 5000);
+      const captureActions = document.getElementById('capture-actions');
+      if (captureActions) captureActions.classList.add('visible');
+      if (throwBallBtn) {
+        throwBallBtn.disabled = balls < 1;
+        throwBallBtn.onclick = function throwBallClick() {
+          if (balls < 1 || !currentCharacterForCapture) return;
+          throwBallBtn.disabled = true;
+          setBalls(balls - 1);
+          if (currentProfile) pushEvent({ event: 'balls_spent', studentId: currentProfile.studentId, sessionId, amount: 1, reason: 'capture_attempt' });
+          if (ballFlyEl) {
+            ballFlyEl.classList.remove('flying');
+            ballFlyEl.offsetHeight;
+            ballFlyEl.classList.add('flying');
+          }
+          setTimeout(() => {
+            const rarity = currentCharacterForCapture.rarity || 'common';
+            const pity = getPity();
+            const chance = captureChance(rarity, 2, pity);
+            const hit = Math.random() < chance;
+            if (currentProfile) pushEvent({ event: 'capture_attempt', studentId: currentProfile.studentId, sessionId, throwQuality: 2, rarity, chance, outcome: hit ? 'caught' : 'missed' });
+            if (hit) {
+              playSound('throw_success');
+              setPity(0);
+              var poolIdx = currentCharacterForCapture.characterPoolIndex;
+              addCollected(poolIdx);
+              lastScrolledToCharacterIndex = poolIdx;
+              renderHallOfFameFrames();
+              requestAnimationFrame(function () { scrollHallOfFameToCharacter(poolIdx, false); });
+              if (captureFeedback) { captureFeedback.textContent = 'Caught!'; captureFeedback.className = 'capture-feedback caught visible'; }
+              triggerJuice('success');
+              triggerJuice('burst');
+              setTimeout(goToNextQuestion, 700);
+            } else {
+              playSound('throw_miss');
+              setPity(pity + 1);
+              captureMissCount++;
+              if (captureFeedback) { captureFeedback.textContent = 'Missed!'; captureFeedback.className = 'capture-feedback missed visible'; }
+              triggerJuice('shake');
+              if (captureMissCount >= captureMissLimit) {
+                characterDisappearing = true;
+                disappearStartTime = performance.now();
+              } else {
+                throwBallBtn.disabled = getBalls() < 1;
+              }
+              if (ballFlyEl) ballFlyEl.classList.remove('flying');
+            }
+          }, 450);
+        };
+      }
+      if (btnSkipCapture) btnSkipCapture.onclick = function () {
+        if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+        goToNextQuestion();
+      };
+    }
+
+    function nextOrQuiz() {
+      goToNextQuestion();
+    }
+
+    function createDanceCharacter(characterIndex) {
+      const group = new THREE.Group();
+      const headGeo = new THREE.SphereGeometry(0.12, 24, 24);
+      const bodyGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.22, 16);
+      const limbGeo = new THREE.CylinderGeometry(0.03, 0.025, 0.18, 8);
+      const gray = new THREE.MeshStandardMaterial({ color: 0x8b7355 });
+      const dark = new THREE.MeshStandardMaterial({ color: 0x2d2d2d });
+      const skin = new THREE.MeshStandardMaterial({ color: 0xf5d0b0 });
+      const white = new THREE.MeshStandardMaterial({ color: 0xe8e8e8 });
+      const brown = new THREE.MeshStandardMaterial({ color: 0x4a3728 });
+      const head = new THREE.Mesh(headGeo, skin);
+      head.position.y = 0.2;
+      group.add(head);
+      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.55), white);
+      hair.position.y = 0.2;
+      hair.rotation.x = 0.1;
+      group.add(hair);
+      const body = new THREE.Mesh(bodyGeo, dark);
+      body.position.y = 0.05;
+      group.add(body);
+      const leftArm = new THREE.Mesh(limbGeo, dark);
+      leftArm.position.set(-0.12, 0.12, 0);
+      leftArm.rotation.z = 0.3;
+      group.add(leftArm);
+      const rightArm = new THREE.Mesh(limbGeo, dark);
+      rightArm.position.set(0.12, 0.12, 0);
+      rightArm.rotation.z = -0.3;
+      group.add(rightArm);
+      const leftLeg = new THREE.Mesh(limbGeo, gray);
+      leftLeg.position.set(-0.05, -0.15, 0);
+      group.add(leftLeg);
+      const rightLeg = new THREE.Mesh(limbGeo, gray);
+      rightLeg.position.set(0.05, -0.15, 0);
+      group.add(rightLeg);
+
+      if (characterIndex === 0) {
+        hair.scale.set(1.15, 1.1, 1.15);
+        hair.material = new THREE.MeshStandardMaterial({ color: 0xddccbb });
+        const mustacheL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.015, 0.02), dark);
+        mustacheL.position.set(-0.035, 0.16, 0.1);
+        mustacheL.rotation.z = 0.15;
+        group.add(mustacheL);
+        const mustacheR = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.015, 0.02), dark);
+        mustacheR.position.set(0.035, 0.16, 0.1);
+        mustacheR.rotation.z = -0.15;
+        group.add(mustacheR);
+      } else if (characterIndex === 1) {
+        hair.scale.set(0.95, 0.9, 0.95);
+        hair.position.y = 0.22;
+        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), white);
+        bun.position.set(0, 0.28, -0.02);
+        group.add(bun);
+      } else if (characterIndex === 2) {
+        hair.scale.set(1.25, 1.2, 1.25);
+        hair.material = new THREE.MeshStandardMaterial({ color: 0xc4a574 });
+        hair.position.y = 0.18;
+      } else if (characterIndex === 3) {
+        hair.scale.set(1.05, 0.95, 1.05);
+        hair.material = new THREE.MeshStandardMaterial({ color: 0x2c1810 });
+      } else if (characterIndex === 4) {
+        const coil = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.01, 8, 16), new THREE.MeshStandardMaterial({ color: 0x888888 }));
+        coil.position.set(0, 0.26, 0.02);
+        coil.rotation.x = Math.PI / 2;
+        group.add(coil);
+      } else if (characterIndex === 5) {
+        hair.material = new THREE.MeshStandardMaterial({ color: 0x6b5344 });
+        const beard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.08), brown);
+        beard.position.set(0, 0.12, 0.11);
+        group.add(beard);
+      }
+
+      group.userData = { leftArm, rightArm, body, leftLeg, rightLeg, baseY: undefined };
+      return group;
+    }
+
+    function updateDanceAnimation(character, t) {
+      if (!character || !character.userData) return;
+      const { leftArm, rightArm, body, leftLeg, rightLeg } = character.userData;
+      const s = Math.sin(t * 2.5) * 0.4;
+      const bounce = Math.abs(Math.sin(t * 3)) * 0.03;
+      body.rotation.z = s * 0.15;
+      leftArm.rotation.z = 0.3 + s;
+      rightArm.rotation.z = -0.3 - s;
+      leftLeg.rotation.x = s * 0.2;
+      rightLeg.rotation.x = -s * 0.2;
+      character.position.y = (character.userData.baseY !== undefined ? character.userData.baseY : 0.25) + bounce;
+    }
+
+    function startDanceMode() {
+      const idx = currentChallengeIndex;
+      const char = challenges[idx].character;
+      const poolIdx = challenges[idx].characterPoolIndex;
+      danceCharacterGroup = createDanceCharacter(poolIdx);
+      danceStartTime = performance.now();
+
+      if (arRenderer && arScene && arCamera) {
+        danceCharacterGroup.position.set(0, -0.35, -0.8);
+        danceCharacterGroup.userData.baseY = -0.35;
+        danceCharacterGroup.userData.originalScale = 2.2;
+        danceCharacterGroup.scale.setScalar(2.2);
+        arCamera.add(danceCharacterGroup);
+        function arDanceLoop() {
+          if (!danceCharacterGroup || !arCamera.children.includes(danceCharacterGroup)) return;
+          if (characterDisappearing) {
+            var t = (performance.now() - disappearStartTime) / 1000;
+            var duration = 0.6;
+            var s = Math.max(0, 1 - t / duration);
+            var base = danceCharacterGroup.userData.originalScale != null ? danceCharacterGroup.userData.originalScale : 2.2;
+            danceCharacterGroup.scale.setScalar(base * s);
+            if (s <= 0) { goToNextQuestion(); return; }
+          } else {
+            const elapsed = (performance.now() - danceStartTime) / 1000;
+            if (elapsed >= DANCE_DURATION_MS / 1000 && !captureOverlayShown) showCaptureOverlay();
+            updateDanceAnimation(danceCharacterGroup, elapsed);
+          }
+          danceAnimationFrame = requestAnimationFrame(arDanceLoop);
+        }
+        arDanceLoop();
+        return;
+      }
+
+      threeCanvas.style.display = 'block';
+      if (characterOnHeadWrap) characterOnHeadWrap.style.display = 'none';
+      const canvas = threeCanvas;
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      scene.background = null;
+      const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
+      camera.position.set(0, 0, 0);
+      camera.lookAt(0, -0.4, -0.8);
+      danceCharacterGroup.position.set(0, -0.4, -0.8);
+      danceCharacterGroup.userData.baseY = -0.4;
+      danceCharacterGroup.userData.originalScale = 1.1;
+      danceCharacterGroup.scale.setScalar(1.1);
+      scene.add(danceCharacterGroup);
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(1, 1, 1);
+      scene.add(light);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      cameraModeDanceRenderer = renderer;
+
+      function cameraDanceLoop() {
+        if (!danceCharacterGroup || !cameraModeDanceRenderer) return;
+        if (characterDisappearing) {
+          var t = (performance.now() - disappearStartTime) / 1000;
+          var duration = 0.6;
+          var s = Math.max(0, 1 - t / duration);
+          var base = danceCharacterGroup.userData.originalScale != null ? danceCharacterGroup.userData.originalScale : 1.1;
+          danceCharacterGroup.scale.setScalar(base * s);
+          renderer.render(scene, camera);
+          if (s <= 0) { goToNextQuestion(); return; }
+        } else {
+          const elapsed = (performance.now() - danceStartTime) / 1000;
+          if (elapsed >= DANCE_DURATION_MS / 1000 && !captureOverlayShown) showCaptureOverlay();
+          updateDanceAnimation(danceCharacterGroup, elapsed);
+          renderer.render(scene, camera);
+        }
+        danceAnimationFrame = requestAnimationFrame(cameraDanceLoop);
+      }
+      cameraDanceLoop();
+    }
+
+    function collectCharacter() {
+      const index = currentChallengeIndex;
+      const poolIdx = challenges[index].characterPoolIndex;
+      addCollected(poolIdx);
+      const char = challenges[index].character;
+      addedName.textContent = char.name;
+      showScreen(addedScreen);
+      lastScrolledToCharacterIndex = poolIdx;
+      renderAlbum();
+      requestAnimationFrame(function () { scrollHallOfFameToCharacter(poolIdx, false); });
+    }
+
+    btnNextAfterAdd.addEventListener('click', () => {
+      currentChallengeIndex++;
+      if (currentChallengeIndex >= challenges.length) {
+        showScreen(doneScreen);
+      } else {
+        renderQuiz();
+        showScreen(quizScreen);
+      }
+      setBalls(getBalls());
+    });
+
+    btnOpenAlbumFinal.addEventListener('click', () => {
+      renderAlbum();
+      albumPanel.classList.add('visible');
+      doneScreen.classList.remove('active');
+    });
+
+    const albumBlurbModal = document.getElementById('album-blurb-modal');
+    const albumBlurbName = document.getElementById('album-blurb-name');
+    const albumBlurbText = document.getElementById('album-blurb-text');
+    const albumBlurbClose = document.getElementById('album-blurb-close');
+    function showAlbumBlurb(name, blurb) {
+      if (albumBlurbName) albumBlurbName.textContent = name || '';
+      if (albumBlurbText) albumBlurbText.textContent = blurb || '';
+      if (albumBlurbModal) albumBlurbModal.classList.add('visible');
+    }
+    if (albumBlurbClose) albumBlurbClose.addEventListener('click', () => { if (albumBlurbModal) albumBlurbModal.classList.remove('visible'); });
+    if (albumBlurbModal) albumBlurbModal.addEventListener('click', (e) => { if (e.target === albumBlurbModal) albumBlurbModal.classList.remove('visible'); });
+
+    function renderAlbum() {
+      albumGrid.innerHTML = '';
+      const collectedArr = getCollected();
+      CHARACTER_POOL.forEach((ch, i) => {
+        const count = collectedArr.filter(function (idx) { return idx === i; }).length;
+        const collected = count > 0;
+        const slot = document.createElement('div');
+        slot.className = 'album-slot ' + (collected ? 'collected' : 'empty');
+        if (collected) {
+          const fullBlurb = charBlurb(ch);
+          const blurb = fullBlurb.length > 120 ? fullBlurb.slice(0, 120) + '…' : fullBlurb;
+          const countLabel = count === 1 ? t('collected_once') : t('collected_times', count);
+          const rarityLabel = RARITY_LABELS[ch.rarity] || RARITY_LABELS.common;
+          const rarityClass = 'rarity-badge rarity-' + (ch.rarity || 'common');
+          const portraitHtml = ch.portrait
+            ? '<span class="character-portrait-wrap"><img class="character-portrait" src="' + escapeHtml(ch.portrait) + '" alt="" onerror="var w=this.closest(\'.character-portrait-wrap\');if(w){var s=w.querySelector(\'.portrait-fallback\');if(s){this.style.display=\'none\';s.style.display=\'flex\';}}}"><span class="character-avatar placeholder portrait-fallback" style="display:none">' + escapeHtml(ch.emoji) + '</span></span>'
+            : '<div class="character-avatar placeholder">' + ch.emoji + '</div>';
+          slot.innerHTML = `
+            ${portraitHtml}
+            <span class="${escapeHtml(rarityClass)}">${escapeHtml(rarityLabel)}</span>
+            <p class="character-name">${escapeHtml(ch.name)}</p>
+            <p class="character-count">${escapeHtml(countLabel)}</p>
+            <p class="character-blurb">${escapeHtml(blurb)}</p>
+            <button type="button" class="album-info-btn" data-pool-index="${i}">${escapeHtml(t('info_btn'))}</button>
+          `;
+          const infoBtn = slot.querySelector('.album-info-btn');
+          if (infoBtn) infoBtn.addEventListener('click', () => {
+            const idx = parseInt(infoBtn.getAttribute('data-pool-index'), 10);
+            const character = CHARACTER_POOL[idx];
+            if (character) showAlbumBlurb(character.name, charBlurb(character));
+          });
+        } else {
+          slot.innerHTML = `
+            <div class="character-avatar placeholder">?</div>
+            <p class="character-name">???</p>
+            <span class="slot-label">${escapeHtml(t('not_collected'))}</span>
+          `;
+        }
+        albumGrid.appendChild(slot);
+      });
+      renderHallOfFameFrames();
+    }
+
+    var lastScrolledToCharacterIndex = null;
+    function scrollHallOfFameToCharacter(poolIndex, instant) {
+      const half = Math.ceil(CHARACTER_POOL.length / 2);
+      var panel = poolIndex < half ? document.getElementById('hall-of-fame-left') : document.getElementById('hall-of-fame-right');
+      if (!panel) return;
+      var gallery = panel.querySelector('.hall-of-fame-gallery');
+      if (!gallery) return;
+      var frame = gallery.querySelector('.hall-of-fame-frame[data-pool-index="' + poolIndex + '"]');
+      if (!frame) return;
+      var frameTop = frame.offsetTop;
+      var frameHeight = frame.offsetHeight;
+      var galleryHeight = gallery.clientHeight;
+      var targetTop = frameTop - (galleryHeight / 2) + (frameHeight / 2);
+      var maxScroll = gallery.scrollHeight - galleryHeight;
+      targetTop = Math.max(0, Math.min(targetTop, maxScroll));
+      gallery.scrollTo({ top: targetTop, behavior: instant ? 'auto' : 'smooth' });
+    }
+
+    btnAlbum.addEventListener('click', () => {
+      renderAlbum();
+      albumPanel.classList.add('visible');
+    });
+    albumClose.addEventListener('click', () => albumPanel.classList.remove('visible'));
+    if (albumReset) albumReset.addEventListener('click', () => {
+      if (confirm(t('confirm_reset'))) {
+        setCollected([]);
+        renderAlbum();
+      }
+    });
+
+    async function initHandTracking() {
+      if (handLandmarker) return;
+      let FilesetResolver = globalThis.FilesetResolver;
+      let HandLandmarkerClass = globalThis.HandLandmarker;
+      if (!HandLandmarkerClass && globalThis.MediaPipeTasksVision) {
+        HandLandmarkerClass = globalThis.MediaPipeTasksVision.HandLandmarker;
+        FilesetResolver = globalThis.MediaPipeTasksVision.FilesetResolver;
+      }
+      if (!FilesetResolver || !HandLandmarkerClass) {
+        console.warn('MediaPipe Hand Landmarker not loaded – use tap to select');
+        return;
+      }
+      try {
+        const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+        handLandmarker = await HandLandmarkerClass.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' },
+          runningMode: 'VIDEO',
+          numHands: 1,
+        });
+      } catch (e) {
+        try {
+          const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+          handLandmarker = await HandLandmarkerClass.createFromModelPath(vision, 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task');
+          if (handLandmarker.setOptions) handLandmarker.setOptions({ runningMode: 'VIDEO' });
+        } catch (e2) {
+          console.warn('Hand tracking init failed:', e2);
+        }
+      }
+    }
+
+    async function initFaceDetection() {
+      if (faceDetector) return;
+      const FilesetResolver = globalThis.FilesetResolver;
+      const FaceDetectorClass = globalThis.FaceDetector;
+      if (!FilesetResolver || !FaceDetectorClass) return;
+      const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+      try {
+        faceDetector = await FaceDetectorClass.createFromModelPath(vision, 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite');
+        if (faceDetector.setOptions) faceDetector.setOptions({ runningMode: 'VIDEO' });
+      } catch (e) {
+        try {
+          faceDetector = await FaceDetectorClass.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/face_detector/float16/1/face_detector.task' },
+            runningMode: 'VIDEO',
+            minDetectionConfidence: 0.5,
+          });
+        } catch (e2) {
+          console.warn('Face detection init failed:', e2);
+        }
+      }
+    }
+
+    function faceBoxToScreen(video, detection) {
+      const rect = video.getBoundingClientRect();
+      const box = detection.boundingBox || detection;
+      const vw = video.videoWidth || 1;
+      const vh = video.videoHeight || 1;
+      let originX = box.originX ?? box.x ?? 0;
+      let originY = box.originY ?? box.y ?? 0;
+      let w = box.width || 0;
+      if (w <= 1 && (box.height || 0) <= 1) {
+        originX *= vw;
+        originY *= vh;
+        w *= vw;
+      }
+      const centerX = originX + w / 2;
+      const screenCenterX = rect.right - (centerX / vw) * rect.width;
+      const screenTopY = rect.top + (originY / vh) * rect.height;
+      return { centerX: screenCenterX, topY: screenTopY };
+    }
+
+    function fingerToScreen(video, x, y) {
+      const rect = video.getBoundingClientRect();
+      const mirroredX = rect.right - x * rect.width;
+      const screenY = rect.top + y * rect.height;
+      return { x: mirroredX, y: screenY };
+    }
+
+    function updateFingerProgress(now) {
+      if (!fingerHoverButton || !fingerHoverButton.parentNode) return;
+      const fill = fingerHoverButton.querySelector('.finger-progress-fill');
+      const lbl = fingerHoverButton.querySelector('.finger-progress-label');
+      const elapsed = now - fingerHoverStart;
+      const pct = Math.min(1, elapsed / FINGER_HOLD_MS);
+      if (fill) { fill.style.display = 'block'; fill.style.width = (pct * 100) + '%'; }
+      if (lbl) {
+        lbl.style.visibility = 'visible';
+        const left = Math.ceil((FINGER_HOLD_MS - elapsed) / 1000);
+        lbl.textContent = left > 0 ? t('selecting_in', left) : t('selecting');
+      }
+      if (elapsed >= FINGER_HOLD_MS) {
+        fingerHoverButton.click();
+        fingerHoverButton = null;
+      }
+    }
+
+    function runHandTrackingLoop() {
+      const now = performance.now();
+      if (!cameraVideo.srcObject || !quizScreen.classList.contains('active')) {
+        fingerCursor.classList.remove('visible');
+        answersContainer.querySelectorAll('.answer-btn').forEach(b => {
+          b.classList.remove('finger-hover');
+          const fill = b.querySelector('.finger-progress-fill');
+          const lbl = b.querySelector('.finger-progress-label');
+          if (fill) { fill.style.width = '0%'; fill.style.display = 'none'; }
+          if (lbl) { lbl.style.visibility = 'hidden'; lbl.textContent = ''; }
+        });
+        fingerHoverButton = null;
+        handTrackingRaf = requestAnimationFrame(runHandTrackingLoop);
+        return;
+      }
+      if (fingerHoverButton) updateFingerProgress(now);
+
+      const video = cameraVideo;
+      if (video.readyState < 2) {
+        handTrackingRaf = requestAnimationFrame(runHandTrackingLoop);
+        return;
+      }
+      if (!handLandmarker) {
+        handTrackingRaf = requestAnimationFrame(runHandTrackingLoop);
+        return;
+      }
+      if (video.currentTime !== lastVideoTime) {
+        try {
+          const result = handLandmarker.detectForVideo(video, now * 0.001);
+          lastVideoTime = video.currentTime;
+          if (result.landmarks && result.landmarks[0]) {
+            const lm = result.landmarks[0][INDEX_FINGER_TIP];
+            const { x, y } = fingerToScreen(video, lm.x, lm.y);
+            fingerCursor.style.left = x + 'px';
+            fingerCursor.style.top = y + 'px';
+            fingerCursor.classList.add('visible');
+            const buttons = answersContainer.querySelectorAll('.answer-btn');
+            let overButton = null;
+            for (const btn of buttons) {
+              const r = btn.getBoundingClientRect();
+              if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+                overButton = btn;
+                break;
+              }
+            }
+            buttons.forEach(b => {
+              b.classList.remove('finger-hover');
+              const fill = b.querySelector('.finger-progress-fill');
+              const lbl = b.querySelector('.finger-progress-label');
+              if (fill) { fill.style.width = '0%'; fill.style.display = 'none'; }
+              if (lbl) { lbl.textContent = ''; lbl.style.visibility = 'hidden'; }
+            });
+            if (overButton) {
+              overButton.classList.add('finger-hover');
+              if (fingerHoverButton !== overButton) {
+                fingerHoverButton = overButton;
+                fingerHoverStart = now;
+                const fill = overButton.querySelector('.finger-progress-fill');
+                const lbl = overButton.querySelector('.finger-progress-label');
+                if (fill) { fill.style.display = 'block'; fill.style.width = '0%'; }
+                if (lbl) { lbl.style.visibility = 'visible'; lbl.textContent = t('selecting_in', 3); }
+              }
+            } else {
+              fingerHoverButton = null;
+            }
+          } else {
+            fingerCursor.classList.remove('visible');
+            fingerHoverButton = null;
+          }
+        } catch (_) {}
+      }
+      handTrackingRaf = requestAnimationFrame(runHandTrackingLoop);
+    }
+
+    async function startCameraFallback() {
+      if (cameraStarted) return;
+      if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+        try { await DeviceOrientationEvent.requestPermission(); } catch (e) {}
+      }
+      if (cameraVideo && cameraVideo.srcObject) {
+        cameraVideo.srcObject.getTracks().forEach(function (t) { t.stop(); });
+        cameraVideo.srcObject = null;
+      }
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+        .then(async stream => {
+          cameraVideo.srcObject = stream;
+          cameraStarted = true;
+          startScreen.classList.add('hidden');
+          arOverlay.style.display = 'flex';
+          btnAlbum.classList.add('visible');
+          if (btnBackMenu) btnBackMenu.classList.add('visible');
+          if (btnQuestionType) btnQuestionType.classList.add('visible');
+          updateProfileBadge();
+          ballCounter.classList.add('visible');
+          challenges = buildChallenges();
+          currentChallengeIndex = 0;
+          setBalls(getBalls());
+          renderQuiz();
+          await initHandTracking();
+          runHandTrackingLoop();
+        })
+        .catch(() => {
+          alert('Camera access is needed for AR. Please allow camera or try "Start with camera".');
+        });
+    }
+
+    async function startAR() {
+      if (!navigator.xr) {
+        alert('WebXR is not supported in this browser. Try Chrome on Android or use "Start with camera".');
+        return;
+      }
+      const supported = await navigator.xr.isSessionSupported('immersive-ar');
+      if (!supported) {
+        startCameraFallback();
+        return;
+      }
+
+      arOverlay.style.display = 'flex';
+      btnAlbum.classList.add('visible');
+      if (btnBackMenu) btnBackMenu.classList.add('visible');
+      if (btnQuestionType) btnQuestionType.classList.add('visible');
+      updateProfileBadge();
+      ballCounter.classList.add('visible');
+      challenges = buildChallenges();
+      currentChallengeIndex = 0;
+      setBalls(getBalls());
+      renderQuiz();
+
+      let session;
+      try {
+        session = await navigator.xr.requestSession('immersive-ar', {
+          optionalFeatures: ['dom-overlay'],
+          domOverlay: { root: arOverlay },
+        });
+      } catch (e) {
+        arOverlay.style.display = 'none';
+        startCameraFallback();
+        return;
+      }
+
+      xrSession = session;
+      startScreen.classList.add('hidden');
+      cameraStarted = true;
+
+      const canvas = threeCanvas;
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, xrCompatible: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.xr.enabled = true;
+      renderer.xr.setSession(session);
+      arRenderer = renderer;
+      arScene = new THREE.Scene();
+      arScene.background = null;
+      arCamera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
+      arCamera.position.set(0, 0, 0);
+      arRenderer.setAnimationLoop(() => {
+        arRenderer.render(arScene, arCamera);
+      });
+
+      session.addEventListener('end', () => {
+        xrSession = null;
+        arRenderer = null;
+        arScene = null;
+        arCamera = null;
+        if (danceAnimationFrame) cancelAnimationFrame(danceAnimationFrame);
+      });
+    }
+
+    const LAST_PROFILE_KEY = 'gobeyond-last-profile';
+    const inputNickname = document.getElementById('input-nickname');
+    const inputClassCode = document.getElementById('input-class-code');
+    const btnIdentityGo = document.getElementById('btn-identity-go');
+    const btnSwitchProfile = document.getElementById('btn-switch-profile');
+
+    function updateProfileBadge() {
+      if (!profileBadge) return;
+      if (currentProfile && (currentProfile.nickname || currentProfile.classCode)) {
+        const parts = [];
+        if (currentProfile.nickname) parts.push('<strong>' + escapeHtml(currentProfile.nickname) + '</strong>');
+        if (currentProfile.classCode) parts.push('Class: ' + escapeHtml(currentProfile.classCode));
+        profileBadge.innerHTML = parts.join(' · ');
+        profileBadge.classList.add('visible');
+        document.body.classList.add('profile-visible');
+      } else {
+        profileBadge.innerHTML = '';
+        profileBadge.classList.remove('visible');
+        document.body.classList.remove('profile-visible');
+      }
+    }
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+    function applyProfile(profile) {
+      currentProfile = profile;
+      sessionId = 'sess_' + Date.now();
+      sessionStartTime = Date.now();
+      if (profile) localStorage.setItem(LAST_PROFILE_KEY, profile.studentId);
+      balls = getBalls();
+      pityCount = getPity();
+      setBalls(balls);
+      setPity(pityCount);
+      pushEvent({ event: 'session_start', studentId: profile.studentId, nickname: profile.nickname, classCode: profile.classCode, sessionId });
+      updateProfileBadge();
+    }
+
+    btnIdentityGo.addEventListener('click', () => {
+      const nick = (inputNickname && inputNickname.value) ? inputNickname.value.trim() : 'Student';
+      const code = (inputClassCode && inputClassCode.value) ? inputClassCode.value.trim() : '';
+      const profile = saveProfile(nick, code);
+      applyProfile(profile);
+      identityScreen.classList.add('hidden');
+      startScreen.classList.remove('hidden');
+    });
+
+    btnSwitchProfile.addEventListener('click', () => {
+      identityScreen.classList.remove('hidden');
+      startScreen.classList.add('hidden');
+      inputNickname.value = '';
+      inputClassCode.value = '';
+    });
+
+    const lastId = localStorage.getItem(LAST_PROFILE_KEY);
+    const profiles = getProfiles();
+    const lastProfile = profiles.find(p => p.studentId === lastId);
+    if (lastProfile) {
+      applyProfile(lastProfile);
+      identityScreen.classList.add('hidden');
+    } else {
+      startScreen.classList.add('hidden');
+    }
+    applyLang();
+    function onLangChange(lang) {
+      setLang(lang);
+      const other = document.getElementById('lang-select-identity');
+      const other2 = document.getElementById('lang-select-start');
+      if (other) other.value = lang;
+      if (other2) other2.value = lang;
+      applyLang();
+    }
+    const langSelectIdentity = document.getElementById('lang-select-identity');
+    const langSelectStart = document.getElementById('lang-select-start');
+    if (langSelectIdentity) langSelectIdentity.addEventListener('change', function () { onLangChange(this.value); });
+    if (langSelectStart) langSelectStart.addEventListener('change', function () { onLangChange(this.value); });
+
+    let albumLongPressTimer = null;
+    btnAlbum.addEventListener('touchstart', () => { albumLongPressTimer = setTimeout(() => { teacherDashboard.classList.add('visible'); }, 800); });
+    btnAlbum.addEventListener('touchend', () => { if (albumLongPressTimer) clearTimeout(albumLongPressTimer); albumLongPressTimer = null; });
+    if (btnQuestionType) {
+      btnQuestionType.textContent = questionType === 'spelling' ? 'Spelling' : 'Math';
+      btnQuestionType.addEventListener('click', function () {
+        questionType = questionType === 'spelling' ? 'math' : 'spelling';
+        try { localStorage.setItem('gobeyond-question-type', questionType); } catch (_) {}
+        btnQuestionType.textContent = questionType === 'spelling' ? 'Spelling' : 'Math';
+        challenges = buildChallenges();
+        currentChallengeIndex = 0;
+        renderQuiz();
+        showScreen(quizScreen);
+      });
+    }
+    if (btnBackMenu) btnBackMenu.addEventListener('click', () => {
+      arOverlay.style.display = 'none';
+      startScreen.classList.remove('hidden');
+      if (btnBackMenu) btnBackMenu.classList.remove('visible');
+      if (btnQuestionType) btnQuestionType.classList.remove('visible');
+      if (soundToggle) soundToggle.classList.remove('visible');
+      if (catchModeToggle) catchModeToggle.classList.remove('visible');
+      if (btnAlbum) btnAlbum.classList.remove('visible');
+      if (ballCounter) ballCounter.classList.remove('visible');
+      if (profileBadge) profileBadge.classList.remove('visible');
+      cameraStarted = false;
+      if (cameraVideo && cameraVideo.srcObject) {
+        cameraVideo.srcObject.getTracks().forEach(function (t) { t.stop(); });
+        cameraVideo.srcObject = null;
+      }
+    });
+    if (linkTeacherDashboard) linkTeacherDashboard.addEventListener('click', (e) => { e.preventDefault(); teacherDashboard.classList.add('visible'); });
+    document.getElementById('teacher-close').addEventListener('click', () => teacherDashboard.classList.remove('visible'));
+
+    function tdFilterEvents() {
+      const classCode = (document.getElementById('td-class') && document.getElementById('td-class').value) || '';
+      const studentId = (document.getElementById('td-student') && document.getElementById('td-student').value) || '';
+      const daterange = (document.getElementById('td-daterange') && document.getElementById('td-daterange').value) || 'all';
+      const events = getEvents();
+      const now = Date.now();
+      const day = 86400000;
+      let start = 0;
+      if (daterange === 'today') start = now - day;
+      else if (daterange === '7') start = now - 7 * day;
+      return events.filter(e => {
+        if (e.ts < start) return false;
+        if (classCode && e.classCode !== classCode) return false;
+        if (studentId && e.studentId !== studentId) return false;
+        return true;
+      });
+    }
+
+    function tdRenderMastery(events) {
+      const byStudent = {};
+      events.filter(e => e.event === 'question_complete').forEach(e => {
+        if (!byStudent[e.studentId]) byStudent[e.studentId] = { nickname: e.nickname, skills: {} };
+        const s = e.skill || 'Unknown';
+        if (!byStudent[e.studentId].skills[s]) byStudent[e.studentId].skills[s] = { correct: 0, total: 0 };
+        byStudent[e.studentId].skills[s].total++;
+        byStudent[e.studentId].skills[s].correct++;
+      });
+      const el = document.getElementById('td-mastery');
+      if (!el) return;
+      el.innerHTML = Object.entries(byStudent).map(([id, d]) => '<div class="intervention-row"><strong>' + (d.nickname || id) + '</strong><div class="bar-chart">' + SKILLS.map(sk => { const t = (d.skills[sk] && d.skills[sk].total) || 0; const c = (d.skills[sk] && d.skills[sk].correct) || 0; const pct = t ? (c / t * 100) : 0; return '<div class="bar" style="height:' + pct + '%" title="' + sk + ' ' + pct.toFixed(0) + '%"></div>'; }).join('') + '</div><small>' + SKILLS.join(', ') + '</small></div>').join('');
+    }
+
+    function tdRenderMisconception(events) {
+      const byStudent = {};
+      events.filter(e => e.event === 'question_complete').forEach(e => {
+        if (!byStudent[e.studentId]) byStudent[e.studentId] = { nickname: e.nickname, attempts: [], time: [], skills: {} };
+        byStudent[e.studentId].attempts.push(e.attempts || 1);
+        byStudent[e.studentId].time.push(e.timeSpent || 0);
+        const s = e.skill || 'Unknown';
+        if (!byStudent[e.studentId].skills[s]) byStudent[e.studentId].skills[s] = { attempts: [], time: [] };
+        byStudent[e.studentId].skills[s].attempts.push(e.attempts || 1);
+        byStudent[e.studentId].skills[s].time.push(e.timeSpent || 0);
+      });
+      const el = document.getElementById('td-misconception');
+      if (!el) return;
+      const labels = [];
+      Object.entries(byStudent).forEach(([id, d]) => {
+        SKILLS.forEach(sk => {
+          const A = (d.skills[sk] && d.skills[sk].attempts) || [];
+          const T = (d.skills[sk] && d.skills[sk].time) || [];
+          const avgA = A.length ? A.reduce((a,b)=>a+b,0)/A.length : 0;
+          const avgT = T.length ? T.reduce((a,b)=>a+b,0)/T.length : 0;
+          let issue = '';
+          if (avgA > 2 && avgT > 15) issue = 'Concept gap';
+          else if (avgA > 2) issue = 'Low fluency';
+          else if (avgT > 25) issue = 'Pace/attention';
+          else if (avgA >= 1.5) issue = 'Difficulty too high';
+          if (issue) labels.push((d.nickname || id) + ' – ' + sk + ': ' + issue);
+        });
+      });
+      el.innerHTML = labels.length ? labels.map(l => '<div class="intervention-row">' + l + '</div>').join('') : '<p class="muted">No signals yet</p>';
+    }
+
+    function tdRenderIntervention(events) {
+      const byStudent = {};
+      events.forEach(e => {
+        if (!byStudent[e.studentId]) byStudent[e.studentId] = { nickname: e.nickname, attempts: 0, time: 0, sessions: new Set(), progress: [] };
+        if (e.event === 'question_complete') { byStudent[e.studentId].attempts += (e.attempts || 1); byStudent[e.studentId].time += (e.timeSpent || 0); byStudent[e.studentId].progress.push(e.difficulty || 0); }
+        if (e.event === 'session_start') byStudent[e.studentId].sessions.add(e.sessionId);
+      });
+      const list = Object.entries(byStudent).map(([id, d]) => {
+        const score = (d.attempts || 0) * 0.3 + (d.time || 0) * 0.02 + (d.sessions.size < 2 ? 2 : 0);
+        return { id, nickname: d.nickname, score, action: d.attempts > 5 ? 'Review practice' : 'Encourage more practice' };
+      }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+      const el = document.getElementById('td-intervention');
+      if (!el) return;
+      el.innerHTML = list.slice(0, 10).map(x => '<div class="intervention-row"><strong>' + (x.nickname || x.id) + '</strong> – ' + x.action + '</div>').join('') || '<p class="muted">No data</p>';
+    }
+
+    function tdRenderAssignment() {
+      const el = document.getElementById('td-assignment');
+      if (!el) return;
+      el.innerHTML = '<div class="assignment-row">Skills: <select id="assign-skills" multiple><option value="Addition">Addition</option><option value="Subtraction">Subtraction</option><option value="Multiplication">Multiplication</option><option value="Division">Division</option><option value="Mixed/OrderOps">Mixed</option></select></div><div class="assignment-row">Difficulty band: <input type="number" id="assign-diff-min" min="1" max="10" value="1"> – <input type="number" id="assign-diff-max" min="1" max="10" value="5"></div><div class="assignment-row">Session length target (min): <input type="number" id="assign-mins" value="10"></div><div class="assignment-row">Balls per correct streak: <input type="number" id="assign-balls" value="1"></div><div class="assignment-row">Class code: <input type="text" id="assign-class" placeholder="CLASS1"></div><button type="button" class="btn btn-secondary btn-demo" id="assign-save">Save assignment</button>';
+      document.getElementById('assign-save').addEventListener('click', () => {
+        const skills = Array.from((document.getElementById('assign-skills') || {}).selectedOptions || []).map(o => o.value);
+        saveAssignment({ classCode: (document.getElementById('assign-class') && document.getElementById('assign-class').value) || '', skills, diffMin: parseInt((document.getElementById('assign-diff-min') && document.getElementById('assign-diff-min').value) || 1, 10), diffMax: parseInt((document.getElementById('assign-diff-max') && document.getElementById('assign-diff-max').value) || 5, 10), sessionMins: parseInt((document.getElementById('assign-mins') && document.getElementById('assign-mins').value) || 10, 10), ballsPerStreak: parseInt((document.getElementById('assign-balls') && document.getElementById('assign-balls').value) || 1, 10) });
+        alert('Assignment saved.');
+      });
+    }
+
+    function tdRenderEconomy(events) {
+      const earned = events.filter(e => e.event === 'balls_earned').reduce((a, e) => a + (e.amount || 0), 0);
+      const spent = events.filter(e => e.event === 'balls_spent').reduce((a, e) => a + (e.amount || 0), 0);
+      const attempts = events.filter(e => e.event === 'capture_attempt');
+      const caught = attempts.filter(e => e.outcome === 'caught').length;
+      const byRarity = {};
+      attempts.forEach(e => { const r = e.rarity || 'common'; byRarity[r] = (byRarity[r] || 0) + 1; });
+      const el = document.getElementById('td-economy');
+      if (!el) return;
+      el.innerHTML = '<div class="intervention-row">Balls earned: ' + earned + ' | spent: ' + spent + '</div><div class="intervention-row">Capture rate: ' + (attempts.length ? (caught / attempts.length * 100).toFixed(1) : 0) + '%</div><div class="intervention-row">Avg balls per capture: ' + (caught ? (spent / caught).toFixed(1) : '-') + '</div><div class="bar-chart" style="height:40px">' + Object.entries(byRarity).map(([r, n]) => '<div class="bar" style="height:' + (attempts.length ? (n/attempts.length*100) : 0) + '%" title="' + r + '"></div>').join('') + '</div>';
+    }
+
+    function tdRefresh() {
+      const events = getEvents();
+      const classes = [...new Set(events.map(e => e.classCode).filter(Boolean))];
+      const students = [...new Set(events.map(e => e.studentId).filter(Boolean))];
+      const nicknames = {};
+      events.forEach(e => { if (e.studentId && e.nickname) nicknames[e.studentId] = e.nickname; });
+      const selClass = document.getElementById('td-class');
+      const selStudent = document.getElementById('td-student');
+      if (selClass) { const v = selClass.value; selClass.innerHTML = '<option value="">All classes</option>' + classes.map(c => '<option value="' + c + '">' + c + '</option>').join(''); selClass.value = v || ''; }
+      if (selStudent) { const v = selStudent.value; selStudent.innerHTML = '<option value="">All students</option>' + students.map(s => '<option value="' + s + '">' + (nicknames[s] || s) + '</option>').join(''); selStudent.value = v || ''; }
+      const ev = tdFilterEvents();
+      tdRenderMastery(ev);
+      tdRenderMisconception(ev);
+      tdRenderIntervention(ev);
+      tdRenderEconomy(ev);
+    }
+
+    document.getElementById('td-class').addEventListener('change', tdRefresh);
+    document.getElementById('td-student').addEventListener('change', tdRefresh);
+    document.getElementById('td-daterange').addEventListener('change', tdRefresh);
+
+    document.getElementById('td-seed-demo').addEventListener('click', () => {
+      const profiles = getProfiles();
+      const pid = profiles.length ? profiles[0].studentId : (saveProfile('Demo', 'CLASS1'), getProfiles()[0].studentId);
+      const sid = 'sess_demo_' + Date.now();
+      for (let i = 0; i < 20; i++) pushEvent({ event: 'question_complete', studentId: pid, nickname: 'Demo', classCode: 'CLASS1', sessionId: sid, skill: SKILLS[i % SKILLS.length], difficulty: 2 + (i % 4), timeSpent: 5 + Math.floor(Math.random() * 20), attempts: 1 + (i % 3) });
+      pushEvent({ event: 'balls_earned', studentId: pid, sessionId: sid, amount: 3, reason: 'correct' });
+      pushEvent({ event: 'capture_attempt', studentId: pid, sessionId: sid, throwQuality: 2, rarity: 'common', chance: 0.8, outcome: Math.random() > 0.3 ? 'caught' : 'missed' });
+      tdRefresh();
+      alert('Demo data seeded.');
+    });
+
+    document.getElementById('td-reset-demo').addEventListener('click', () => {
+      if (confirm('Clear all event data?')) { localStorage.removeItem(STORAGE_EVENTS); tdRefresh(); alert('Demo data reset.'); }
+    });
+
+    tdRenderAssignment();
+    tdRefresh();
+
+    document.getElementById('btn-start-ar').addEventListener('click', startAR);
+    document.getElementById('btn-start-camera').addEventListener('click', startCameraFallback);
+
+    soundToggle.addEventListener('click', () => { soundEnabled = !soundEnabled; soundToggle.textContent = soundEnabled ? '🔊' : '🔇'; });
+    soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
+    soundToggle.classList.add('visible');
+    function updateCatchModeToggle() {
+      if (!catchModeToggle) return;
+      catchModeToggle.textContent = catchMode === 'center' ? '🎯 Center' : '🔎 Explore';
+    }
+    updateCatchModeToggle();
+    if (catchModeToggle) {
+      catchModeToggle.classList.add('visible');
+      catchModeToggle.addEventListener('click', () => {
+        catchMode = catchMode === 'center' ? 'explore' : 'center';
+        try { localStorage.setItem('gobeyond-catch-mode', catchMode); } catch (_) {}
+        updateCatchModeToggle();
+        if (quizScreen && quizScreen.classList.contains('active')) renderAnswersOnly();
+      });
+    }
+    function resumeAudioOnUserGesture() {
+      try {
+        const ctx = getAudioCtx();
+        if (ctx.state === 'suspended') ctx.resume();
+      } catch (_) {}
+    }
+    document.getElementById('btn-identity-go').addEventListener('click', resumeAudioOnUserGesture);
+    document.getElementById('btn-start-ar').addEventListener('click', resumeAudioOnUserGesture);
+    document.getElementById('btn-start-camera').addEventListener('click', resumeAudioOnUserGesture);
+  </script>
+</body>
+</html>
