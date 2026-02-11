@@ -1547,7 +1547,18 @@
       const item = SPELLING_WORDS[Math.floor(Math.random() * SPELLING_WORDS.length)];
       const word = item.word;
       const letters = word.split('');
-      const answers = [...letters].sort(function () { return Math.random() - 0.5; });
+      /* Add 3-5 extra distractor letters that aren't in the word */
+      const allLetters = 'abcdefghijklmnopqrstuvwxyz'.split('');
+      const wordLettersSet = new Set(letters.map(function (l) { return l.toLowerCase(); }));
+      const availableDistractors = allLetters.filter(function (l) { return !wordLettersSet.has(l); });
+      const numDistractors = 3 + Math.floor(Math.random() * 3); /* 3-5 */
+      const distractors = [];
+      for (var i = 0; i < numDistractors && availableDistractors.length > 0; i++) {
+        var idx = Math.floor(Math.random() * availableDistractors.length);
+        distractors.push(availableDistractors[idx]);
+        availableDistractors.splice(idx, 1);
+      }
+      const answers = [...letters, ...distractors].sort(function () { return Math.random() - 0.5; });
       return { question: item.icon, word: word, answers: answers, correct: word, skill: 'Spelling', icon: item.icon, img: item.img };
     }
 
@@ -1660,6 +1671,7 @@
     const successScreen = document.getElementById('success-screen');
     const addedScreen = document.getElementById('added-screen');
     const doneScreen = document.getElementById('done-screen');
+    const hallOfFame = document.getElementById('hall-of-fame');
     const quizTitle = document.getElementById('quiz-title');
     const quizSubtitle = document.getElementById('quiz-subtitle');
     const spellingUnderlinesEl = document.getElementById('spelling-underlines');
@@ -1700,6 +1712,14 @@
       if (currentProfile) localStorage.setItem('gobeyond-balls-' + currentProfile.studentId, String(balls));
       if (ballCountEl) ballCountEl.textContent = balls;
       if (ballCounter) ballCounter.classList.toggle('visible', balls >= 0 && arOverlay.style.display === 'flex');
+      /* If in capture mode and no balls left, show next question button */
+      if (currentCharacterForCapture && balls < 1) {
+        if (throwBallBtn) throwBallBtn.style.display = 'none';
+        if (btnSkipCapture) {
+          btnSkipCapture.style.display = 'block';
+          btnSkipCapture.classList.add('visible');
+        }
+      }
     }
 
     function getPity() {
@@ -1889,12 +1909,12 @@
       return wrap;
     }
 
-    function randomHideAndSeekPositions(count, reservedTopPct) {
+    function randomHideAndSeekPositions(count, reservedTopPct, minDistanceOverride) {
       var margin = 8;
       var rangeX = 100 - 2 * margin;
       var yMin = reservedTopPct != null ? Math.min(100 - margin, Math.max(margin, reservedTopPct)) : margin;
       var rangeY = 100 - margin - yMin;
-      var minDist = 24;
+      var minDist = minDistanceOverride != null ? minDistanceOverride : 24;
       var positions = [];
       for (var n = 0; n < count; n++) {
         var tries = 0;
@@ -1910,7 +1930,7 @@
           }
           if (ok) break;
           tries++;
-        } while (tries < 80);
+        } while (tries < 150);
         positions.push({ x: xPct, y: yPct });
       }
       return positions;
@@ -2094,7 +2114,7 @@
         btn.appendChild(progressWrap);
         progressLabel.style.visibility = 'hidden';
         progressFill.style.display = 'none';
-        if (isSpelling) btn.addEventListener('click', function () { onSpellingLetter(value); });
+        if (isSpelling) btn.addEventListener('click', function () { onSpellingLetter(value, btn); });
         else btn.addEventListener('click', function () { onAnswer(value); });
         answersContainer.appendChild(btn);
       });
@@ -2124,7 +2144,7 @@
         var explorationOffsetX = 0;
         var explorationOffsetY = 0;
         setExplorationTransform(explorationSpace, explorationOffsetX, explorationOffsetY);
-        var positions = randomHideAndSeekPositions(sorted.length, q.skill === 'Spelling' ? 42 : undefined);
+        var positions = randomHideAndSeekPositions(sorted.length, q.skill === 'Spelling' ? 42 : undefined, q.skill === 'Spelling' ? 20 : undefined);
         sorted.forEach(function (value, i) {
           var pos = positions[i];
           var xPct = pos.x;
@@ -2157,7 +2177,7 @@
           progressLabel.style.visibility = 'hidden';
           progressFill.style.display = 'none';
           if (q.skill === 'Spelling') {
-            btn.addEventListener('click', function () { onSpellingLetter(value); });
+            btn.addEventListener('click', function () { onSpellingLetter(value, btn); });
           } else {
             btn.addEventListener('click', function () {});
           }
@@ -2228,6 +2248,8 @@
       characterCard.innerHTML = '<div class="character-avatar">' + char.emoji + '</div><p class="character-name">' + char.name + '</p><p class="character-desc">' + char.desc + '</p>';
       var poolIdx = c.characterPoolIndex;
       currentCharacterForCapture = { ...char, challengeIndex: currentChallengeIndex, characterPoolIndex: poolIdx };
+      /* Show hall of fame when character appears */
+      if (hallOfFame) hallOfFame.style.display = '';
       showScreen(danceScreen);
       startDanceMode();
       setTimeout(function () {
@@ -2235,7 +2257,7 @@
       }, 400);
     }
 
-    function onSpellingLetter(letter) {
+    function onSpellingLetter(letter, buttonElement) {
       var q = currentGeneratedQuestion;
       if (!q || q.skill !== 'Spelling') return;
       var word = q.word;
@@ -2243,12 +2265,22 @@
       if (letter !== word[nextIndex]) {
         playSound('wrong');
         attemptCountCurrentQuestion++;
+        /* Show all previously hidden letter buttons again (both exploration and center mode) */
+        var allLetterBtns = answersContainer.querySelectorAll('.answer-btn');
+        allLetterBtns.forEach(function (btn) {
+          btn.style.display = '';
+          btn.style.visibility = '';
+        });
         spellingTyped = '';
         updateSpellingUnderlines();
         return;
       }
       spellingTyped += letter;
       updateSpellingUnderlines();
+      /* Hide only the specific button that was clicked (not all instances of the letter) */
+      if (buttonElement) {
+        buttonElement.style.display = 'none';
+      }
       if (spellingTyped === word) {
         goToCorrectAnswerFlow();
       }
@@ -2300,6 +2332,11 @@
       explorationCollectActiveBtn = null;
       explorationCollectActiveStart = 0;
       hideCurrentFound();
+      /* Show the question now that all answers are collected */
+      if (quizTitle && currentGeneratedQuestion && currentGeneratedQuestion.skill !== 'Spelling') {
+        quizTitle.style.display = '';
+        quizTitle.textContent = currentGeneratedQuestion.question;
+      }
       if (quizSubtitle) quizSubtitle.textContent = 'Choose the correct answer';
       if (foundCollectedRow) {
         foundCollectedRow.innerHTML = '';
@@ -2404,6 +2441,8 @@
       setFoundAnswersUIVisible(false);
       resetFoundAnswersUI();
       if (quizScreen) quizScreen.classList.remove('collect-find-mode');
+      /* Hide hall of fame when seeking answers */
+      if (hallOfFame) hallOfFame.style.display = 'none';
       renderHallOfFameFrames();
       questionStartTime = Date.now();
       attemptCountCurrentQuestion = 0;
@@ -2423,8 +2462,15 @@
         if (spellingUnderlinesEl) { spellingUnderlinesEl.classList.add('visible'); spellingUnderlinesEl.setAttribute('aria-hidden', 'false'); updateSpellingUnderlines(); }
         if (quizSubtitle) quizSubtitle.textContent = 'Explore the room to reveal letters, then spell the word.';
       } else {
-        quizTitle.style.display = '';
+        /* Math question: set text content first */
         quizTitle.textContent = q.question;
+        /* Hide initially in exploration mode, show in center mode */
+        if (catchMode === 'center') {
+          quizTitle.style.display = '';
+        } else {
+          /* Exploration mode: hide question until all answers collected */
+          quizTitle.style.display = 'none';
+        }
         if (spellingPictureFrame) { spellingPictureFrame.classList.remove('visible'); spellingPictureFrame.setAttribute('aria-hidden', 'true'); }
         if (spellingPictureImg) spellingPictureImg.removeAttribute('src');
         if (spellingUnderlinesEl) { spellingUnderlinesEl.classList.remove('visible'); spellingUnderlinesEl.setAttribute('aria-hidden', 'true'); spellingUnderlinesEl.innerHTML = ''; }
@@ -2580,7 +2626,14 @@
       if (characterBubble) characterBubble.classList.remove('visible');
       const captureActionsEl = document.getElementById('capture-actions');
       if (captureActionsEl) captureActionsEl.classList.remove('visible');
-      if (throwBallBtn) throwBallBtn.disabled = false;
+      if (throwBallBtn) {
+        throwBallBtn.disabled = false;
+        throwBallBtn.style.display = '';
+      }
+      if (btnSkipCapture) {
+        btnSkipCapture.style.display = 'none';
+        btnSkipCapture.classList.remove('visible');
+      }
       if (ballFlyEl) ballFlyEl.classList.remove('flying');
       if (captureFeedback) { captureFeedback.textContent = ''; captureFeedback.className = 'capture-feedback'; captureFeedback.classList.remove('visible', 'caught', 'missed'); }
       currentChallengeIndex++;
@@ -2641,8 +2694,21 @@
       }, 5000);
       const captureActions = document.getElementById('capture-actions');
       if (captureActions) captureActions.classList.add('visible');
+      /* Initially show throw ball button if player has balls, otherwise show next question button */
       if (throwBallBtn) {
+        throwBallBtn.style.display = balls >= 1 ? '' : 'none';
         throwBallBtn.disabled = balls < 1;
+      }
+      if (btnSkipCapture) {
+        if (balls < 1) {
+          btnSkipCapture.style.display = 'block';
+          btnSkipCapture.classList.add('visible');
+        } else {
+          btnSkipCapture.style.display = 'none';
+          btnSkipCapture.classList.remove('visible');
+        }
+      }
+      if (throwBallBtn) {
         throwBallBtn.onclick = function throwBallClick() {
           if (balls < 1 || !currentCharacterForCapture) return;
           throwBallBtn.disabled = true;
@@ -2670,7 +2736,13 @@
               if (captureFeedback) { captureFeedback.textContent = 'Caught!'; captureFeedback.className = 'capture-feedback caught visible'; }
               triggerJuice('success');
               triggerJuice('burst');
-              setTimeout(goToNextQuestion, 700);
+              /* Hide throw ball button, show next question button */
+              if (throwBallBtn) throwBallBtn.style.display = 'none';
+              if (btnSkipCapture) {
+                btnSkipCapture.style.display = 'block';
+                btnSkipCapture.classList.add('visible');
+              }
+              /* Don't auto-advance - wait for player to click Next question */
             } else {
               playSound('throw_miss');
               setPity(pity + 1);
@@ -2681,7 +2753,16 @@
                 characterDisappearing = true;
                 disappearStartTime = performance.now();
               } else {
-                throwBallBtn.disabled = getBalls() < 1;
+                const remainingBalls = getBalls();
+                throwBallBtn.disabled = remainingBalls < 1;
+                /* If no balls left, show next question button */
+                if (remainingBalls < 1) {
+                  if (throwBallBtn) throwBallBtn.style.display = 'none';
+                  if (btnSkipCapture) {
+                    btnSkipCapture.style.display = 'block';
+                    btnSkipCapture.classList.add('visible');
+                  }
+                }
               }
               if (ballFlyEl) ballFlyEl.classList.remove('flying');
             }
@@ -2807,7 +2888,15 @@
             var s = Math.max(0, 1 - t / duration);
             var base = danceCharacterGroup.userData.originalScale != null ? danceCharacterGroup.userData.originalScale : 2.2;
             danceCharacterGroup.scale.setScalar(base * s);
-            if (s <= 0) { goToNextQuestion(); return; }
+            if (s <= 0) {
+              /* Show next question button when character disappears - don't auto-advance */
+              if (throwBallBtn) throwBallBtn.style.display = 'none';
+              if (btnSkipCapture) {
+                btnSkipCapture.style.display = 'block';
+                btnSkipCapture.classList.add('visible');
+              }
+              return;
+            }
           } else {
             const elapsed = (performance.now() - danceStartTime) / 1000;
             if (elapsed >= DANCE_DURATION_MS / 1000 && !captureOverlayShown) showCaptureOverlay();
